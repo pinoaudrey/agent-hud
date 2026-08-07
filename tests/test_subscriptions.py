@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from helpers import write_claude_tree
+from helpers import write_claude_tree, write_cswap_store
 from subscriptions import (
     ClaudeOrg,
     ClaudeProfile,
@@ -176,3 +176,103 @@ def test_metadata_without_an_org_is_not_an_identity(tmp_path: Path):
         json.dumps({"oauthAccount": {"accountUuid": "b46054a2", "emailAddress": "j@x.com"}})
     )
     assert claude_profiles(home=tmp_path)[0].org is None
+
+
+# ------------------------------------------------------------- claude-swap
+
+
+def _swapped_machine(tmp_path: Path, active_org: str = MAX_ORG) -> Path:
+    """The machine after the hand-made `~/.claude-team` is gone: one default tree
+    holding whichever account is signed in, and a cswap profile per account."""
+    write_claude_tree(tmp_path, ".claude", org_uuid=active_org,
+                      org_name="joseph@carepilot.com" if active_org == MAX_ORG else "CarePilot",
+                      org_type="claude_max" if active_org == MAX_ORG else "claude_team")
+    write_cswap_store(tmp_path, [
+        {"num": 1, "org_uuid": MAX_ORG, "org_name": "joseph@carepilot.com",
+         "org_type": "claude_max", "alias": "personal"},
+        {"num": 2, "org_uuid": TEAM_ORG, "org_name": "CarePilot",
+         "org_type": "claude_team", "alias": "team"},
+    ], active=1 if active_org == MAX_ORG else 2)
+    return tmp_path
+
+
+def test_both_subscriptions_survive_with_no_sibling_tree(tmp_path: Path):
+    """The point of the whole change: with `~/.claude-team` deleted, the Team
+    seat has to keep showing up, and it does because cswap's session profile is
+    a config tree in its own right."""
+    subs = claude_subscriptions(claude_profiles(home=_swapped_machine(tmp_path)))
+    assert [(s.id, s.label) for s in subs] == [
+        ("claude-max", "Claude Max"),
+        ("claude-team", "Claude Team"),
+    ]
+
+
+def test_the_swapped_out_account_still_reports(tmp_path: Path):
+    """Swapping to the Team seat must not make the Max plan's quota vanish from
+    the card. Both accounts keep a profile, so both stay readable whichever one
+    `~/.claude` currently holds."""
+    subs = claude_subscriptions(claude_profiles(home=_swapped_machine(tmp_path, TEAM_ORG)))
+    assert sorted(s.id for s in subs) == ["claude-max", "claude-team"]
+
+
+def test_active_follows_whichever_account_is_signed_in(tmp_path: Path):
+    """`active` is what the card marks, and it has to track the swap rather than
+    a fixed tree, since a bare `claude` bills whatever `~/.claude` holds."""
+    on_max = claude_subscriptions(claude_profiles(home=_swapped_machine(tmp_path)))
+    assert {s.id: s.active for s in on_max} == {"claude-max": True, "claude-team": False}
+
+
+def test_active_moves_when_the_account_is_swapped(tmp_path: Path):
+    on_team = claude_subscriptions(claude_profiles(home=_swapped_machine(tmp_path, TEAM_ORG)))
+    assert {s.id: s.active for s in on_team} == {"claude-max": False, "claude-team": True}
+
+
+def test_exactly_one_subscription_is_ever_active(tmp_path: Path):
+    """Two rows both claiming to be the live account would be worse than none."""
+    subs = claude_subscriptions(claude_profiles(home=_swapped_machine(tmp_path)))
+    assert sum(1 for s in subs if s.active) == 1
+
+
+def test_the_active_account_collapses_with_its_own_profile(tmp_path: Path):
+    """`~/.claude` and the profile for the same slot are one organization, so
+    they are one subscription — reporting them separately would double-count the
+    active plan's headroom, which is the bug this module was written to stop."""
+    subs = claude_subscriptions(claude_profiles(home=_swapped_machine(tmp_path)))
+    max_sub = next(s for s in subs if s.id == "claude-max")
+    assert max_sub.trees == ["~/.claude", "cswap:personal"]
+
+
+def test_a_profile_is_named_by_its_alias_not_its_directory(tmp_path: Path):
+    """The profile directory is a slot number and a mangled email. `cswap:team`
+    is what the person types, so it is what the card shows."""
+    subs = claude_subscriptions(claude_profiles(home=_swapped_machine(tmp_path)))
+    team = next(s for s in subs if s.id == "claude-team")
+    assert team.trees == ["cswap:team"]
+
+
+def test_the_cswap_backup_root_is_not_a_config_tree(tmp_path: Path):
+    """`.claude-swap-backup` matches the `.claude-*` glob that finds sibling
+    trees. Left in, it reports as a signed-out subscription called
+    "swap-backup" that no account will ever fill."""
+    subs = claude_subscriptions(claude_profiles(home=_swapped_machine(tmp_path)))
+    assert not any("swap" in s.id for s in subs)
+
+
+def test_an_unaliased_slot_falls_back_to_its_plan(tmp_path: Path):
+    """An account added without `cswap alias` still has to name itself."""
+    write_claude_tree(tmp_path, ".claude", org_uuid=MAX_ORG,
+                      org_name="joseph@carepilot.com", org_type="claude_max")
+    write_cswap_store(tmp_path, [
+        {"num": 2, "org_uuid": TEAM_ORG, "org_name": "CarePilot", "org_type": "claude_team"},
+    ])
+    team = next(s for s in claude_subscriptions(claude_profiles(home=tmp_path))
+                if s.id == "claude-team")
+    assert team.profiles[0].label == "team"
+
+
+def test_a_machine_with_no_cswap_is_unchanged(tmp_path: Path):
+    """cswap is not a dependency. A machine that has never installed it must
+    report exactly what it did before."""
+    subs = claude_subscriptions(claude_profiles(home=_machine(tmp_path)))
+    assert [s.trees for s in subs] == [["~/.claude"], ["~/.claude-team"]]
+    assert [s.active for s in subs] == [True, False]

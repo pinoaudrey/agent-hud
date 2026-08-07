@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import serve as serve_module
 from agents import RunningAgent
-from helpers import write_claude_tree
+from helpers import write_claude_tree, write_cswap_store
 from serve import (
     HudDaemon,
     build_snapshot,
@@ -648,3 +648,65 @@ def test_daemon_polls_swap_and_clears_it_on_a_failed_ask(
     assert daemon.snapshot()["swap"]["active_slot"] == 1
     daemon.poll_swap_once()
     assert daemon.snapshot()["swap"] is None
+
+
+# ----------------------------------------------- which account is paying now
+
+
+def _swapped(tmp_path: Path, active_org: str):
+    """A cswap machine: `~/.claude` holds whichever account is signed in, and
+    every account keeps a session profile so none of them drop off the card."""
+    is_max = active_org == MAX_ORG
+    write_claude_tree(tmp_path, ".claude", org_uuid=active_org,
+                      org_name="joseph@carepilot.com" if is_max else "CarePilot",
+                      org_type="claude_max" if is_max else "claude_team")
+    write_cswap_store(tmp_path, [
+        {"num": 1, "org_uuid": MAX_ORG, "org_name": "joseph@carepilot.com",
+         "org_type": "claude_max", "alias": "personal"},
+        {"num": 2, "org_uuid": TEAM_ORG, "org_name": "CarePilot",
+         "org_type": "claude_team", "alias": "team"},
+    ], active=1 if is_max else 2)
+    profiles = claude_profiles(home=tmp_path)
+    # Each reading has to report the plan its own profile holds. A reading whose
+    # credential contradicts the tree is treated as the tree being out of date
+    # (see _reconciled), so a fixture that gets this wrong tests that path
+    # instead of this one.
+    usages = [
+        _claude_usage(config_dir=str(p.config_dir), plan=p.org.plan)
+        for p in profiles
+    ]
+    return build_snapshot(usages, _now(), [], profiles=profiles)
+
+
+def test_snapshot_marks_the_account_that_is_currently_paying(tmp_path: Path):
+    snap = _swapped(tmp_path, MAX_ORG)
+    assert {s["id"]: s["active"] for s in snap["subscriptions"]} == {
+        "claude-max": True, "claude-team": False}
+
+
+def test_the_active_mark_moves_with_the_swap(tmp_path: Path):
+    """The whole point of putting it on the card: after cswap switches, the HUD
+    has to say so, or it is reporting last hour's billing."""
+    snap = _swapped(tmp_path, TEAM_ORG)
+    assert {s["id"]: s["active"] for s in snap["subscriptions"]} == {
+        "claude-max": False, "claude-team": True}
+
+
+def test_both_claude_plans_stay_on_the_card_after_a_swap(tmp_path: Path):
+    """Swapping must not make the other plan's quota disappear."""
+    snap = _swapped(tmp_path, TEAM_ORG)
+    assert sorted(s["id"] for s in snap["subscriptions"]) == ["claude-max", "claude-team"]
+
+
+def test_codex_is_always_its_own_active_account(tmp_path: Path):
+    """Codex has one login and no switcher, so whatever it holds is what a
+    session spends."""
+    snap = build_snapshot([_codex_usage()], _now(), [])
+    assert snap["subscriptions"][0]["active"] is True
+
+
+def test_an_unattributed_reading_is_never_marked_active(tmp_path: Path):
+    """A reading we cannot tie to a tree cannot be shown to be the live account,
+    and guessing would put the mark on the wrong plan."""
+    snap = build_snapshot([_claude_usage()], _now(), [])
+    assert snap["subscriptions"][0]["active"] is False

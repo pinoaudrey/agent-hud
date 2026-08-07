@@ -62,6 +62,11 @@ public struct Subscription: Codable, Equatable, Identifiable {
     /// organization and were collapsed into this entry. Empty for Codex, and for
     /// a reading the daemon could not attribute.
     public let trees: [String]
+    /// Whether a session started right now with no account named would spend
+    /// this subscription. Exactly one Claude subscription is active at a time —
+    /// claude-swap switches by rewriting `~/.claude` — so this is what tells you
+    /// which plan is paying for the work happening in front of you.
+    public let active: Bool
     /// When these numbers were last true. Claude is re-read every few minutes;
     /// Codex is only as fresh as the last Codex turn, which can be days ago, so
     /// this is what stops an old percentage being shown as a current one.
@@ -72,7 +77,7 @@ public struct Subscription: Codable, Equatable, Identifiable {
     public let activeAgents: Int
 
     enum CodingKeys: String, CodingKey {
-        case id, provider, label, trees, windows, tightest, stale
+        case id, provider, label, trees, active, windows, tightest, stale
         case readAt = "read_at"
         case activeAgents = "active_agents"
     }
@@ -82,6 +87,7 @@ public struct Subscription: Codable, Equatable, Identifiable {
         provider: String,
         label: String,
         trees: [String] = [],
+        active: Bool = false,
         readAt: Date? = nil,
         windows: [Window],
         tightest: Window?,
@@ -92,6 +98,7 @@ public struct Subscription: Codable, Equatable, Identifiable {
         self.provider = provider
         self.label = label
         self.trees = trees
+        self.active = active
         self.readAt = readAt
         self.windows = windows
         self.tightest = tightest
@@ -107,6 +114,10 @@ public struct Subscription: Codable, Equatable, Identifiable {
         // Absent on a snapshot written before subscriptions were keyed on the
         // organization, so decode it leniently rather than failing the whole read.
         trees = try c.decodeIfPresent([String].self, forKey: .trees) ?? []
+        // Absent on a snapshot from a daemon that predates account switching.
+        // Defaulting to false means an older daemon marks nothing rather than
+        // marking the wrong plan.
+        active = try c.decodeIfPresent(Bool.self, forKey: .active) ?? false
         // Absent on a snapshot from a daemon that predates it. Unknown age is
         // not the same as fresh, but it is also not something to accuse the
         // reading of, so it simply goes unstated.

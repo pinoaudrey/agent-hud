@@ -22,7 +22,7 @@ extension HUDSnapshot {
             id: "claude-team",
             provider: "claude",
             label: "Claude Team",
-            trees: ["~/.claude-team"],
+            trees: ["cswap:team"],
             readAt: at(-2),
             windows: [
                 Window(kind: "session_5h", pctLeft: 18, resetsAt: at(126),
@@ -37,7 +37,10 @@ extension HUDSnapshot {
             id: "claude-max",
             provider: "claude",
             label: "Claude Max",
-            trees: ["~/.claude"],
+            // The default tree plus this account's own cswap profile: one
+            // organization reached two ways, and the one currently signed in.
+            trees: ["~/.claude", "cswap:personal"],
+            active: true,
             readAt: at(-2),
             windows: [
                 Window(kind: "session_5h", pctLeft: 74, resetsAt: at(72), pace: nil),
@@ -52,6 +55,7 @@ extension HUDSnapshot {
             id: "codex",
             provider: "codex",
             label: "Codex Pro",
+            active: true,
             // Deliberately old: Codex only updates when you use Codex, so this
             // is its normal state after a quiet day and the pod must say so.
             readAt: at(-3 * 24 * 60),
@@ -95,14 +99,17 @@ extension HUDSnapshot {
             ]
         )
 
+        // Agrees with the subscriptions above: the personal Max is the signed-in
+        // plan, so its slot is the active one. The badge and this section are one
+        // fact through two paths and the sample must not have them disagree.
         let swap = SwapBlock(
             activeSlot: 1,
             accounts: [
-                SwapAccount(slot: 1, alias: "work", email: "j@carepilot.com",
-                            organizationUuid: "org-team", subscriptionID: "claude-team",
-                            active: true),
-                SwapAccount(slot: 2, alias: "personal", email: "j@home.com",
+                SwapAccount(slot: 1, alias: "personal", email: "j@home.com",
                             organizationUuid: "org-max", subscriptionID: "claude-max",
+                            active: true),
+                SwapAccount(slot: 2, alias: "team", email: "j@carepilot.com",
+                            organizationUuid: "org-team", subscriptionID: "claude-team",
                             active: false),
             ],
             auto: SwapAuto(running: true, threshold: 90)

@@ -17,6 +17,23 @@ The account metadata is a plain JSON file Claude Code maintains. For the default
 tree it lives at `~/.claude.json`; a tree opened with CLAUDE_CONFIG_DIR keeps its
 own copy inside the tree. Reading the wrong one is how the default account ended
 up unidentifiable.
+
+Sibling trees are no longer the only place an account lives. claude-swap keeps a
+per-account profile under `~/.claude-swap-backup/sessions/<slot>-<email>/`, which
+is a config tree in every respect that matters here: it holds its own
+`.claude.json` and its own credentials, and Claude Code runs against it whenever
+`cswap run` points `CLAUDE_CONFIG_DIR` at it. Treating those profiles as trees is
+what keeps every subscription on the card once the hand-made `~/.claude-team` is
+gone.
+
+It also changes what `~/.claude` means. It used to be one fixed account; under
+claude-swap it is whichever account is *currently* signed in, and swapping
+rewrites its `oauthAccount` in place. So the default tree no longer identifies a
+subscription, it identifies the active one — which is why `ClaudeSubscription`
+exposes `active` and why every account needs a session profile of its own. An
+account with no profile drops off the card the moment it is swapped out of
+`~/.claude`, and reappears when it is swapped back, which reads as quota
+vanishing.
 """
 
 from __future__ import annotations
@@ -25,6 +42,14 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# claude-swap's store. macOS and Windows keep the legacy layout; Linux and WSL
+# follow XDG. Both are checked rather than detecting the platform, since the
+# wrong guess silently loses every account that has no sibling tree.
+_CSWAP_ROOTS = (
+    Path(".claude-swap-backup"),
+    Path(".local/share/claude-swap"),
+)
 
 # organizationType -> the word that names the plan on the card.
 _PLAN_WORDS = {
@@ -72,6 +97,10 @@ class ClaudeProfile:
     config_dir: Path  # the account's ~/.claude tree (default, or a CLAUDE_CONFIG_DIR)
     default: bool = False  # the built-in ~/.claude, launched without CLAUDE_CONFIG_DIR
     org: ClaudeOrg | None = None
+    # The claude-swap alias for this profile ("team"), when it is one of cswap's
+    # session profiles. Names the row, since the profile's own directory is a
+    # slot number and a mangled email that mean nothing on a card.
+    cswap_alias: str = ""
     # How this tree is worth naming on screen, resolved against the home it was
     # discovered under rather than against the process's own, so a snapshot built
     # for one home never prints paths from another.
@@ -94,10 +123,29 @@ class ClaudeSubscription:
     def trees(self) -> list[str]:
         return [p.tree for p in self.profiles]
 
+    @property
+    def active(self) -> bool:
+        """Whether this is the subscription a bare `claude` spends right now.
 
-def _display_path(path: Path, home: Path) -> str:
+        The default tree is the active login by definition: claude-swap switches
+        accounts by rewriting `~/.claude`, so whichever organization that tree
+        holds is the one an unqualified session bills to. Reading it this way
+        rather than asking cswap keeps the answer true on a machine that has
+        never heard of cswap, where the default tree is simply the only login.
+        """
+        return any(p.default for p in self.profiles)
+
+
+def _display_path(path: Path, home: Path, cswap_alias: str = "") -> str:
     """`~/.claude-team` rather than the full home path, since the full path is
-    the user's name and adds nothing to a label."""
+    the user's name and adds nothing to a label.
+
+    A claude-swap profile is named for its slot and a slugged email
+    (`2-joseph_carepilot.com`), which is machinery rather than information, so it
+    shows as `cswap:team` — the name the person actually types to run it.
+    """
+    if cswap_alias:
+        return f"cswap:{cswap_alias}"
     try:
         return "~/" + str(path.relative_to(home))
     except ValueError:
@@ -139,7 +187,9 @@ def _is_email(name: str) -> bool:
     return "@" in name
 
 
-def _profile_label(org: ClaudeOrg | None, config_dir: Path, default: bool) -> str:
+def _profile_label(
+    org: ClaudeOrg | None, config_dir: Path, default: bool, cswap_alias: str = ""
+) -> str:
     """A short name for the tree. The plan names it when we know it, since that
     is how a person thinks of a subscription ("my Team seat"); a tree with no
     readable account falls back to its directory suffix, so an unnamed row still
@@ -149,6 +199,8 @@ def _profile_label(org: ClaudeOrg | None, config_dir: Path, default: bool) -> st
             return org.plan.lower()
         if org.name and not _is_email(org.name):
             return org.name.split()[0].lower()
+    if cswap_alias:
+        return cswap_alias
     name = config_dir.name
     if name.startswith(".claude-"):
         return name[len(".claude-"):] or name
@@ -158,35 +210,71 @@ def _profile_label(org: ClaudeOrg | None, config_dir: Path, default: bool) -> st
 def claude_profiles(home: Path | None = None) -> list[ClaudeProfile]:
     """Every Claude config tree on this machine, each with the organization it
     is signed into. The built-in `~/.claude` comes first, then the sibling
-    `~/.claude-<name>` trees in name order."""
+    `~/.claude-<name>` trees in name order, then claude-swap's session
+    profiles."""
     home = Path(home) if home else Path.home()
     profiles: list[ClaudeProfile] = []
-    for config_dir, default in _config_dirs(home):
+    for config_dir, default, alias in _config_dirs(home):
         org = _org_for(config_dir, default, home)
         profiles.append(
             ClaudeProfile(
-                label=_profile_label(org, config_dir, default),
+                label=_profile_label(org, config_dir, default, alias),
                 config_dir=config_dir,
                 default=default,
                 org=org,
-                display=_display_path(config_dir, home),
+                cswap_alias=alias,
+                display=_display_path(config_dir, home, alias),
             )
         )
     return profiles
 
 
-def _config_dirs(home: Path) -> list[tuple[Path, bool]]:
-    """(tree, is_default) for every config tree, default first. A machine with
-    no `~/.claude` at all still yields it, so callers always have something to
-    report against rather than an empty list."""
+def _cswap_profile_dirs(home: Path) -> list[tuple[Path, str]]:
+    """(profile dir, alias) for every claude-swap session profile.
+
+    The alias comes from cswap's `sequence.json`, keyed by slot number, which is
+    the leading segment of the profile's directory name. A slot with no alias set
+    yields an empty one and falls back to the plan word, so an unaliased account
+    is still named by something a person recognizes.
+    """
+    for root in _CSWAP_ROOTS:
+        sessions = home / root / "sessions"
+        if not sessions.is_dir():
+            continue
+        aliases = {
+            str(num): str((meta or {}).get("alias") or "")
+            for num, meta in (
+                (_read_json(home / root / "sequence.json") or {}).get("accounts", {})
+            ).items()
+        }
+        found = []
+        for d in sorted(sessions.iterdir()):
+            if not d.is_dir():
+                continue
+            found.append((d, aliases.get(d.name.split("-", 1)[0], "")))
+        return found
+    return []
+
+
+def _config_dirs(home: Path) -> list[tuple[Path, bool, str]]:
+    """(tree, is_default, cswap alias) for every config tree, default first.
+
+    A machine with no `~/.claude` at all still yields it, so callers always have
+    something to report against rather than an empty list.
+    """
     default = home / ".claude"
-    dirs: list[tuple[Path, bool]] = []
+    dirs: list[tuple[Path, bool, str]] = []
     if default.is_dir():
-        dirs.append((default, True))
+        dirs.append((default, True, ""))
+    # `.claude-*` is also how claude-swap's own store is named, and its backup
+    # root is a store rather than a login. Left in, it reports as a permanently
+    # signed-out subscription called "swap-backup".
+    reserved = {r.name for r in _CSWAP_ROOTS}
     for d in sorted(home.glob(".claude-*")):
-        if d.is_dir():
-            dirs.append((d, False))
-    return dirs or [(default, True)]
+        if d.is_dir() and d.name not in reserved:
+            dirs.append((d, False, ""))
+    dirs.extend((d, False, alias) for d, alias in _cswap_profile_dirs(home))
+    return dirs or [(default, True, "")]
 
 
 def slug(text: str) -> str:

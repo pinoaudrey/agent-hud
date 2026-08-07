@@ -129,3 +129,39 @@ final class DecodingTests: XCTestCase {
         XCTAssertNotNil(try HUDSnapshot.decode(from: Data(frac.utf8)).generatedAt)
     }
 }
+
+extension DecodingTests {
+
+    /// The fixture predates account switching, so it carries no `active` key.
+    /// An older daemon marking nothing is right; an older daemon marking the
+    /// wrong plan would be worse than no badge at all.
+    func testActiveDefaultsToFalseOnASnapshotWithoutIt() throws {
+        let snap = try HUDSnapshot.decode(from: loadFixtureData())
+        XCTAssertFalse(snap.subscriptions.contains { $0.active })
+    }
+
+    func testActiveDecodesWhenThePresentDaemonSendsIt() throws {
+        let json = """
+        {"version": 2, "generated_at": "2026-08-07T18:00:00+00:00",
+         "subscriptions": [
+           {"id": "claude-max", "provider": "claude", "label": "Claude Max",
+            "trees": ["~/.claude", "cswap:personal"], "active": true,
+            "windows": [], "tightest": null, "stale": null, "active_agents": 0},
+           {"id": "claude-team", "provider": "claude", "label": "Claude Team",
+            "trees": ["cswap:team"], "active": false,
+            "windows": [], "tightest": null, "stale": null, "active_agents": 0}],
+         "agents": []}
+        """.data(using: .utf8)!
+
+        let snap = try HUDSnapshot.decode(from: json)
+        XCTAssertEqual(snap.subscriptions.filter { $0.active }.map(\.id), ["claude-max"])
+    }
+
+    /// Two Claude plans, one signed in. If both ever read as active the badge
+    /// stops meaning anything, so the count is worth pinning.
+    func testExactlyOneClaudePlanIsSignedInOnTheSample() {
+        let claude = HUDSnapshot.sample.subscriptions.filter { $0.provider == "claude" }
+        XCTAssertEqual(claude.filter(\.active).count, 1)
+        XCTAssertEqual(claude.first(where: \.active)?.id, "claude-max")
+    }
+}

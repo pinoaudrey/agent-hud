@@ -129,6 +129,12 @@ extension SectionRule where Accessory == EmptyView {
 /// three limits is three rows rather than one number plus footnotes.
 struct LimitsSection: View {
     let subs: [Subscription]
+    /// Whether "which account is signed in" is a live question. With a single
+    /// Claude plan the answer is always the same one, and a badge that never
+    /// moves is decoration rather than information.
+    private var marksActive: Bool {
+        subs.filter { $0.provider == "claude" }.count > 1
+    }
     let now: Date
 
     var body: some View {
@@ -136,7 +142,7 @@ struct LimitsSection: View {
             SectionRule(title: "LIMITS")
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(subs) { sub in
-                    PlanLimits(sub: sub, now: now)
+                    PlanLimits(sub: sub, now: now, marksActive: marksActive)
                 }
             }
         }
@@ -147,6 +153,14 @@ struct LimitsSection: View {
 struct PlanLimits: View {
     let sub: Subscription
     let now: Date
+    var marksActive: Bool = false
+
+    /// Only Claude switches accounts, so only Claude earns the badge. Codex is
+    /// reported active because its one login is the one in use, which is true
+    /// but not worth saying on a card.
+    private var showsActive: Bool {
+        marksActive && sub.active && sub.provider == "claude"
+    }
 
     private var dotColor: Color {
         sub.provider == "codex" ? Theme.codexGreen : Theme.claudeCoral
@@ -159,7 +173,20 @@ struct PlanLimits: View {
                 Text(sub.label.uppercased())
                     .font(Theme.label(10, weight: .semibold))
                     .tracking(1.0)
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(showsActive ? Theme.text : Theme.muted)
+                if showsActive {
+                    Text("SIGNED IN")
+                        .font(Theme.label(9, weight: .semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(Theme.claudeCoral)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(Theme.claudeCoral.opacity(0.45), lineWidth: 1)
+                        )
+                        .fixedSize()
+                }
                 Spacer(minLength: 8)
                 trailingNote
             }

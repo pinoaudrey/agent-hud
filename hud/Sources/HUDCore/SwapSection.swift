@@ -1,10 +1,12 @@
 import SwiftUI
 
-// The account-rotation panel: which cswap slot currently holds the default
-// profile's credential, and whether the auto-rotator is alive. After a switch,
-// the config tree no longer implies the account, so this section is the card's
-// answer to "who is billing right now" — the question /status answers inside a
-// session, made glanceable.
+// The account-rotation panel: cswap's side of the story. The LIMITS section
+// already badges the signed-in plan (from what `~/.claude` holds), so this
+// section carries what the pods cannot: the cswap slot aliases those plans
+// answer to ("work", "personal"), and whether the auto-rotator is alive and
+// what threshold it switches at. The active row says "signed in" — the same
+// words as the badge — because the two are one fact reported through two
+// paths, and a card that names one state two ways invents a distinction.
 //
 // Rendered only when the daemon has a swap block. A machine without cswap, or
 // a daemon that could not ask, sends null, and an unmanaged machine should not
@@ -87,7 +89,7 @@ struct SwapRow: View {
                     .foregroundStyle(Theme.faint)
             }
             Spacer(minLength: 8)
-            Text(account.active ? "holds ~/.claude" : "standby")
+            Text(account.active ? "signed in" : "standby")
                 .font(Theme.label(11))
                 .foregroundStyle(account.active ? Theme.text : Theme.faint)
         }

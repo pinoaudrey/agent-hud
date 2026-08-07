@@ -84,15 +84,17 @@ def _codex_label(usage) -> str:
     return f"Codex {usage.plan}".strip() if usage.plan else "Codex"
 
 
-def _claude_identity(usage, index) -> tuple[str, str, list[str]]:
-    """(id, label, trees) for a Claude reading, resolved through the config tree
-    it came from. A reading with no matching tree — no profiles were passed, or
-    the machine changed under us mid-poll — is still reported, unattributed,
-    rather than dropped or guessed onto somebody else's subscription."""
+def _claude_identity(usage, index) -> tuple[str, str, list[str], bool]:
+    """(id, label, trees, active) for a Claude reading, resolved through the
+    config tree it came from. A reading with no matching tree — no profiles were
+    passed, or the machine changed under us mid-poll — is still reported,
+    unattributed, rather than dropped or guessed onto somebody else's
+    subscription. Unattributed means we cannot say it is the live account
+    either, so it is never marked active on a guess."""
     sub = index.get(usage.config_dir)
     if sub is None:
-        return "claude", f"Claude {usage.plan}".strip() if usage.plan else "Claude", []
-    return sub.id, sub.label, sub.trees
+        return "claude", f"Claude {usage.plan}".strip() if usage.plan else "Claude", [], False
+    return sub.id, sub.label, sub.trees, sub.active
 
 
 def _reconciled(profiles, usages):
@@ -265,7 +267,7 @@ def _collect_value() -> dict | None:
 # ---------------------------------------------------------------- snapshot
 
 
-def _subscription_entry(usage, sub_id, label, trees, now, soonest) -> tuple[dict, tuple | None]:
+def _subscription_entry(usage, sub_id, label, trees, active, now, soonest) -> tuple[dict, tuple | None]:
     """One subscription entry, plus the earliest reset seen while building it.
     `soonest` is threaded through rather than closed over so this stays pure."""
     windows_out = []
@@ -291,6 +293,11 @@ def _subscription_entry(usage, sub_id, label, trees, now, soonest) -> tuple[dict
         "provider": usage.tool,
         "label": label,
         "trees": trees,
+        # Whether a session started right now with no account named would spend
+        # this subscription. Under claude-swap the answer moves between Claude
+        # accounts as it switches, so this is the one field on the card that
+        # says which plan is currently paying.
+        "active": active,
         # When these numbers were last true, which is not when the snapshot was
         # built. Claude is re-read every few minutes; Codex is only as fresh as
         # the last Codex turn, and that can be days.
@@ -365,11 +372,13 @@ def build_snapshot(usages, fetched_at, agents, value=None, profiles=None, setup=
         if usage.tool not in ("claude", "codex"):
             continue  # opencode is BYOK, not a subscription
         if usage.tool == "codex":
-            sub_id, label, trees = "codex", _codex_label(usage), []
+            # Codex signs into one account at a time and has no switcher, so the
+            # login it has is the one any session spends.
+            sub_id, label, trees, active = "codex", _codex_label(usage), [], True
         else:
-            sub_id, label, trees = _claude_identity(usage, index)
+            sub_id, label, trees, active = _claude_identity(usage, index)
 
-        entry, soonest = _subscription_entry(usage, sub_id, label, trees, now, soonest)
+        entry, soonest = _subscription_entry(usage, sub_id, label, trees, active, now, soonest)
         if sub_id in by_id:
             kept = _pick_reading(by_id[sub_id], entry)
             subscriptions[subscriptions.index(by_id[sub_id])] = kept
