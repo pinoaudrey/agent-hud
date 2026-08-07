@@ -87,6 +87,10 @@ public struct MenuBarContentView: View {
         }
         .padding(.horizontal, 5)
         .frame(height: 22)
+        // ImageRenderer can propose the glance less than its ideal width in the
+        // status-item context, which turns "74" into "7…". The glance is never
+        // legitimately compressible, so it always takes its ideal size.
+        .fixedSize()
     }
 
     /// True only for real problems. A setup the daemon could not check shows
@@ -118,12 +122,14 @@ struct GlanceNumber: View {
                 .font(Theme.mono(12, weight: .semibold))
                 .foregroundStyle(MenuBarContentView.numberColor(pctLeft: pctLeft, ink: ink))
                 .monospacedDigit()
+                .fixedSize()
         }
     }
 
-    /// "74%", or a bare dash when the window has no reading — "--%" would
-    /// claim a percentage exists that could not be read.
+    /// The bare number, "74". No "%": with only numbers on the bar there is
+    /// nothing else it could mean, and the glyph costs width on every glance.
+    /// A window with no reading is a dash, not a zero.
     private var text: String {
-        pctLeft != nil ? "\(Fmt.glancePercent(pctLeft: pctLeft))%" : "–"
+        pctLeft != nil ? Fmt.glancePercent(pctLeft: pctLeft) : "–"
     }
 }
