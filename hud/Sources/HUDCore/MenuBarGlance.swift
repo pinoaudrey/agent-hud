@@ -1,28 +1,31 @@
 import SwiftUI
 
-/// The menu-bar status-item content: one concentric ring cluster per
-/// subscription, and a single dot when the agent setup has problems.
+/// The menu-bar status-item content: each Claude plan's 5-hour headroom as a
+/// number, a mark on the signed-in plan, and a single dot when the agent setup
+/// has problems.
 ///
-/// There is deliberately no countdown. The only one that fits here is the
-/// soonest reset across every plan, which is a single number that does not say
-/// which plan it belongs to — and the card, a click away, gives each plan its
-/// own reset and its own 5-hour clock.
+/// Codex is deliberately absent. The bar answers "can I keep working right
+/// now", and with no switcher and no session limit, Codex never changes that
+/// answer minute to minute; its quota reads on the card, a click away.
 ///
-/// Each ring is a fuel gauge for one window — the arc is how much is left — and
-/// is coloured by severity, so a plan running dry shrinks and turns amber and
-/// then red without you having to read a number. That colour is the reason this is **not** rendered as a
-/// template image: a template throws its pixels away and takes AppKit's tint,
-/// which is what keeps a monochrome icon legible over any wallpaper but would
-/// also flatten green, amber and red into one shade. So the glance draws in real
-/// colour, and everything that is *not* severity resolves against the menu bar's
-/// own appearance instead, which is what `ink` carries — see AppDelegate, which
-/// re-renders whenever that appearance changes.
+/// The number is the 5-hour window because that is the immediate budget — the
+/// weekly limits move too slowly to be worth a permanent spot in the bar, and
+/// they read on the card with their resets. There is likewise no countdown: the
+/// only one that fits is the soonest reset across every plan, which is a single
+/// number that does not say which plan it belongs to.
+///
+/// The glance is **not** rendered as a template image: a template throws its
+/// pixels away and takes AppKit's tint, which is what keeps a monochrome icon
+/// legible over any wallpaper but would also flatten the pressure colors into
+/// one shade. So it draws in real color, and everything that is *not* severity
+/// resolves against the menu bar's own appearance instead, which is what `ink`
+/// carries — see AppDelegate, which re-renders whenever that appearance changes.
 public struct MenuBarContentView: View {
     public let snapshot: HUDSnapshot?
     public var now: Date
     /// The menu bar's own foreground colour, resolved from its current
-    /// appearance: near-white on a dark bar, near-black on a light one. Used for
-    /// the ring tracks and the offline dashes, never for a reading.
+    /// appearance: near-white on a dark bar, near-black on a light one. Used
+    /// for healthy numbers and the offline dashes, never for a pressure state.
     public var ink: Color
 
     public init(snapshot: HUDSnapshot?, now: Date = Date(), ink: Color = .primary) {
@@ -31,23 +34,40 @@ public struct MenuBarContentView: View {
         self.ink = ink
     }
 
-    private var orderedSubs: [Subscription] {
-        snapshot?.orderedSubscriptions ?? []
+    /// The plans the bar shows: Claude only, in the card's order.
+    public var glanceSubs: [Subscription] {
+        (snapshot?.orderedSubscriptions ?? []).filter { $0.provider == "claude" }
+    }
+
+    /// Same rule as the card's SIGNED IN badge: with a single Claude plan the
+    /// mark could never move, and a mark that never moves is decoration.
+    public var marksActive: Bool {
+        glanceSubs.count > 1
+    }
+
+    /// Ink while the plan is healthy, the severity color once the window is
+    /// pressured (under 25% left) or spent — the same threshold at which a pod
+    /// lights. A bar full of green numbers would train the eye to stop reading
+    /// color at all; color appears exactly when it means something.
+    public static func numberColor(pctLeft: Int?, ink: Color) -> Color {
+        guard let pct = pctLeft, pct < 25 else { return ink }
+        return Theme.severity(pctLeft: pct)
     }
 
     public var body: some View {
-        HStack(spacing: 7) {
-            if !orderedSubs.isEmpty {
-                ForEach(orderedSubs) { sub in
-                    RingCluster(
-                        rings: sub.glanceRings,
-                        diameter: 20,
-                        strokeWidth: 1.6,
-                        track: ink.opacity(0.28)
+        HStack(spacing: 8) {
+            if !glanceSubs.isEmpty {
+                ForEach(glanceSubs) { sub in
+                    GlanceNumber(
+                        pctLeft: sub.glanceWindow?.pctLeft,
+                        marked: marksActive && sub.active,
+                        ink: ink
                     )
                 }
             } else {
-                ForEach(0..<3, id: \.self) { _ in
+                // Offline, or a machine with no Claude plan at all. Dashes, not
+                // zeros: "we cannot see the plans" must not read as "spent".
+                ForEach(0..<2, id: \.self) { _ in
                     Text("–")
                         .font(Theme.mono(13, weight: .semibold))
                         .foregroundStyle(ink.opacity(0.35))
@@ -75,5 +95,35 @@ public struct MenuBarContentView: View {
     public var showsSetupDot: Bool {
         guard let setup = snapshot?.setup else { return false }
         return !setup.isClean
+    }
+}
+
+/// One plan's number: the 5-hour percent left, with a coral mark when this is
+/// the signed-in plan. The mark leads the number so the marked figure reads as
+/// one unit rather than a number with trailing punctuation.
+struct GlanceNumber: View {
+    let pctLeft: Int?
+    let marked: Bool
+    let ink: Color
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if marked {
+                Circle()
+                    .fill(Theme.claudeCoral)
+                    .frame(width: 4, height: 4)
+                    .accessibilityLabel("signed in")
+            }
+            Text(text)
+                .font(Theme.mono(12, weight: .semibold))
+                .foregroundStyle(MenuBarContentView.numberColor(pctLeft: pctLeft, ink: ink))
+                .monospacedDigit()
+        }
+    }
+
+    /// "74%", or a bare dash when the window has no reading — "--%" would
+    /// claim a percentage exists that could not be read.
+    private var text: String {
+        pctLeft != nil ? "\(Fmt.glancePercent(pctLeft: pctLeft))%" : "–"
     }
 }

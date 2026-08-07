@@ -5,20 +5,22 @@ import AppKit
 #endif
 @testable import HUDCore
 
-/// The menu-bar glance: which rings each subscription gets, the soonest-reset
-/// countdown, and the fact that it now draws in real color rather than as a
-/// template. That last one is the reason `ink` exists — a template image gets
-/// AppKit's tint for free, and giving that up means the glance has to resolve
-/// its own foreground against the bar's appearance instead.
+/// The menu-bar glance: which plans reach the bar, the number each one shows,
+/// when the number takes a pressure color, the mark on the signed-in plan, and
+/// the fact that it draws in real color rather than as a template. That last
+/// one is the reason `ink` exists — a template image gets AppKit's tint for
+/// free, and giving that up means the glance has to resolve its own foreground
+/// against the bar's appearance instead.
 final class MenuBarGlanceTests: XCTestCase {
 
     private func window(_ kind: String, _ pctLeft: Int?) -> HUDCore.Window {
         HUDCore.Window(kind: kind, pctLeft: pctLeft, resetsAt: nil, pace: nil)
     }
 
-    private func sub(_ id: String, provider: String = "claude", windows: [HUDCore.Window]) -> Subscription {
-        Subscription(id: id, provider: provider, label: id, windows: windows,
-                     tightest: windows.first, stale: nil, activeAgents: 0)
+    private func sub(_ id: String, provider: String = "claude", active: Bool = false,
+                     windows: [HUDCore.Window]) -> Subscription {
+        Subscription(id: id, provider: provider, label: id, active: active,
+                     windows: windows, tightest: windows.first, stale: nil, activeAgents: 0)
     }
 
     private func snapshot(
@@ -47,22 +49,59 @@ final class MenuBarGlanceTests: XCTestCase {
         XCTAssertNotNil(snap.soonestReset)
     }
 
-    // MARK: - Rings
+    // MARK: - Which plans reach the bar
 
-    func testAClaudePlanGetsThreeRingsAndCodexOne() {
-        let claude = sub("claude-max", windows: [
-            window("session_5h", 74), window("weekly_7d", 88), window("weekly_fable", 0),
-        ])
-        let codex = sub("codex", provider: "codex", windows: [window("weekly", 81)])
-        XCTAssertEqual(claude.glanceRings.count, 3)
-        XCTAssertEqual(codex.glanceRings.count, 1)
-    }
-
-    func testRingsFollowTheSameOrderAsTheCard() {
+    func testCodexStaysOffTheBar() {
+        // The bar answers "can I keep working right now"; Codex has no session
+        // limit and no switcher, so it never changes that answer minute to
+        // minute. It reads on the card, a click away.
         let snap = snapshot([sub("codex", provider: "codex", windows: [window("weekly", 81)]),
                              sub("claude-max", windows: [window("session_5h", 74)])])
-        // Claude plans lead, Codex last, exactly as the pods are laid out.
-        XCTAssertEqual(snap.orderedSubscriptions.map { $0.id }, ["claude-max", "codex"])
+        let glance = MenuBarContentView(snapshot: snap, now: now)
+        XCTAssertEqual(glance.glanceSubs.map { $0.id }, ["claude-max"])
+    }
+
+    func testClaudePlansKeepTheCardsOrder() {
+        let snap = snapshot([sub("claude-team", windows: [window("session_5h", 18)]),
+                             sub("claude-max", windows: [window("session_5h", 74)])])
+        let glance = MenuBarContentView(snapshot: snap, now: now)
+        XCTAssertEqual(glance.glanceSubs.map { $0.id }, ["claude-team", "claude-max"])
+    }
+
+    // MARK: - The signed-in mark
+
+    func testTheMarkNeedsMoreThanOneClaudePlan() {
+        // Same rule as the card's SIGNED IN badge: a mark that could never move
+        // is decoration.
+        let one = MenuBarContentView(
+            snapshot: snapshot([sub("claude-max", active: true,
+                                    windows: [window("session_5h", 74)])]), now: now)
+        XCTAssertFalse(one.marksActive)
+
+        let two = MenuBarContentView(
+            snapshot: snapshot([sub("claude-team", active: true,
+                                    windows: [window("session_5h", 18)]),
+                                sub("claude-max", windows: [window("session_5h", 74)])]),
+            now: now)
+        XCTAssertTrue(two.marksActive)
+    }
+
+    // MARK: - The number's color
+
+    func testTheNumberKeepsTheBarsInkWhileHealthy() {
+        // A bar full of green numbers trains the eye to stop reading color;
+        // color appears exactly when it means something.
+        XCTAssertEqual(MenuBarContentView.numberColor(pctLeft: 74, ink: .white), .white)
+        XCTAssertEqual(MenuBarContentView.numberColor(pctLeft: 25, ink: .black), .black)
+        XCTAssertEqual(MenuBarContentView.numberColor(pctLeft: nil, ink: .white), .white)
+    }
+
+    func testTheNumberTakesTheSeverityColorOncePressured() {
+        // The same threshold at which a pod lights.
+        XCTAssertEqual(MenuBarContentView.numberColor(pctLeft: 24, ink: .white),
+                       Theme.severity(pctLeft: 24))
+        XCTAssertEqual(MenuBarContentView.numberColor(pctLeft: 0, ink: .white),
+                       Theme.severity(pctLeft: 0))
     }
 
     // MARK: - Color, which is why this is not a template image
