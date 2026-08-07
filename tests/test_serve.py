@@ -81,11 +81,11 @@ def _fake_agents() -> list[RunningAgent]:
 
 def test_snapshot_has_frozen_top_level_shape():
     snap = build_snapshot(_fake_usages(), _now(), _fake_agents())
-    assert snap["version"] == 2
+    assert snap["version"] == 3
     # generated_at is ISO8601 with an offset
     assert datetime.fromisoformat(snap["generated_at"]).tzinfo is not None
     assert set(snap) == {"version", "generated_at", "subscriptions", "agents",
-                         "value", "soonest_reset", "setup"}
+                         "value", "soonest_reset", "setup", "swap"}
     # opencode is BYOK, never a subscription
     assert [s["provider"] for s in snap["subscriptions"]] == ["claude", "codex"]
 
@@ -462,7 +462,7 @@ def test_hud_endpoint_serves_the_snapshot(running_server: str):
         assert resp.headers["Content-Type"] == "application/json"
         assert resp.headers["Access-Control-Allow-Origin"] == "*"
         snap = json.loads(resp.read().decode())
-    assert snap["version"] == 2
+    assert snap["version"] == 3
     assert [s["provider"] for s in snap["subscriptions"]] == ["claude", "codex"]
     assert len(snap["agents"]) == 2
 
@@ -470,7 +470,7 @@ def test_hud_endpoint_serves_the_snapshot(running_server: str):
 def test_health_endpoint(running_server: str):
     with urllib.request.urlopen(f"{running_server}/v1/health", timeout=5) as resp:
         assert resp.status == 200
-        assert json.loads(resp.read().decode()) == {"ok": True, "version": 2}
+        assert json.loads(resp.read().decode()) == {"ok": True, "version": 3}
 
 
 def test_unknown_path_404s(running_server: str):
@@ -506,7 +506,7 @@ def test_non_loopback_bind_allowed_with_env_override(monkeypatch: pytest.MonkeyP
 def test_snapshot_carries_the_setup_block():
     setup = {"version": 1, "generated_at": "x", "problems": 2, "sections": []}
     snap = build_snapshot(_fake_usages(), _now(), [], setup=setup)
-    assert snap["version"] == 2
+    assert snap["version"] == 3
     assert snap["setup"] == setup
 
 
@@ -582,3 +582,69 @@ def test_the_fresher_of_two_trees_on_one_org_wins(tmp_path: Path):
     snap = build_snapshot(usages, _now(), [], profiles=profiles)
     assert len(snap["subscriptions"]) == 1
     assert snap["subscriptions"][0]["read_at"] == newer.isoformat()
+
+
+# ---------------------------------------------------------------- swap block
+
+
+def _swap_block(**accounts_by_org) -> dict:
+    """A collector-shaped swap block: subscription_id still unresolved."""
+    return {
+        "active_slot": 1,
+        "accounts": [
+            {"slot": i + 1, "alias": alias, "email": f"{alias}@x.com",
+             "organization_uuid": org, "subscription_id": None, "active": i == 0}
+            for i, (alias, org) in enumerate(accounts_by_org.items())
+        ],
+        "auto": {"running": True, "threshold": 90},
+    }
+
+
+def test_swap_accounts_resolve_to_subscriptions_by_organization(tmp_path: Path):
+    write_claude_tree(tmp_path, ".claude", org_uuid=TEAM_ORG,
+                      org_name="CarePilot", org_type="claude_team")
+    write_claude_tree(tmp_path, ".claude-personal", org_uuid=MAX_ORG,
+                      org_name="a@home.com", org_type="claude_max")
+    profiles = claude_profiles(home=tmp_path)
+
+    swap = _swap_block(work=TEAM_ORG, personal=MAX_ORG)
+    snap = build_snapshot(_fake_usages(), _now(), [], profiles=profiles, swap=swap)
+    by_alias = {a["alias"]: a for a in snap["swap"]["accounts"]}
+    assert by_alias["work"]["subscription_id"] == "claude-team"
+    assert by_alias["personal"]["subscription_id"] == "claude-max"
+    assert snap["swap"]["active_slot"] == 1
+    assert snap["swap"]["auto"] == {"running": True, "threshold": 90}
+
+
+def test_a_swap_account_with_no_matching_org_stays_unattributed(tmp_path: Path):
+    """An account whose organization is not signed in on this machine must keep
+    a null subscription_id rather than being guessed onto someone else's pod."""
+    write_claude_tree(tmp_path, ".claude", org_uuid=TEAM_ORG,
+                      org_name="CarePilot", org_type="claude_team")
+    profiles = claude_profiles(home=tmp_path)
+
+    swap = _swap_block(work=TEAM_ORG, stranger="org-nobody-here")
+    snap = build_snapshot(_fake_usages(), _now(), [], profiles=profiles, swap=swap)
+    by_alias = {a["alias"]: a for a in snap["swap"]["accounts"]}
+    assert by_alias["work"]["subscription_id"] == "claude-team"
+    assert by_alias["stranger"]["subscription_id"] is None
+
+
+def test_swap_is_null_when_the_question_could_not_be_asked():
+    snap = build_snapshot(_fake_usages(), _now(), [], swap=None)
+    assert "swap" in snap and snap["swap"] is None
+
+
+def test_daemon_polls_swap_and_clears_it_on_a_failed_ask(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The block's whole claim is which account is billing right now, so a
+    failed poll writes null through rather than holding the last good answer."""
+    good = _swap_block(work=TEAM_ORG)
+    answers = [good, None]
+    monkeypatch.setattr(serve_module, "collect_swap", lambda: answers.pop(0))
+    daemon = HudDaemon(cache_path=tmp_path / "hud.json")
+    daemon.poll_swap_once()
+    assert daemon.snapshot()["swap"]["active_slot"] == 1
+    daemon.poll_swap_once()
+    assert daemon.snapshot()["swap"] is None

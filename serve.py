@@ -28,17 +28,22 @@ from activity import enrich
 from agents import running_agents
 from setup_health import collect_setup
 from subscriptions import ClaudeOrg, claude_profiles, slug, subscription_index
+from swap import collect_swap
 from usage import collect_usage
 
 # Live activity is cheap (file reads + one ps); usage hits a rate-limited API and
 # barely moves between reads, so it stays slow and leans on usage.py's own cache.
 # Setup health sits between the two: it shells out to check-setup.sh, which is
 # well under a second but not free, and drift arrives at the speed of a person
-# editing a config file.
+# editing a config file. Swap state polls faster than setup because a cswap
+# switch lands in running sessions within ~30 seconds, and the card claiming the
+# wrong account is active is the exact confusion the block exists to remove;
+# the call reads cswap's own cache, so the pace costs nothing upstream.
 ACTIVITY_POLL_SECONDS = 2.0
 USAGE_POLL_SECONDS = 180.0
 SETUP_POLL_SECONDS = 60.0
-SCHEMA_VERSION = 2
+SWAP_POLL_SECONDS = 30.0
+SCHEMA_VERSION = 3
 
 # Window durations, used to project a burn line for the tightest window.
 _WINDOW_SECONDS = {
@@ -312,8 +317,29 @@ def _pick_reading(existing, candidate):
     return existing
 
 
-def build_snapshot(usages, fetched_at, agents, value=None, profiles=None, setup=None) -> dict:
-    """Fold collector outputs into a v2 HUD snapshot dict. Pure given its args:
+def _resolve_swap(swap: dict | None, index) -> dict | None:
+    """The swap block with each account resolved to the subscription its
+    organization maps to. cswap and this daemon key accounts the same way (the
+    organization uuid), so the join is exact; an account whose organization is
+    not signed in on this machine keeps a null subscription_id rather than
+    being guessed onto someone else's pod."""
+    if swap is None:
+        return None
+    by_org: dict[str, str] = {}
+    for sub in index.values():
+        for profile in sub.profiles:
+            if profile.org is not None:
+                by_org[profile.org.uuid] = sub.id
+    accounts = [
+        {**account, "subscription_id": by_org.get(account.get("organization_uuid") or "")}
+        for account in swap.get("accounts", [])
+    ]
+    return {**swap, "accounts": accounts}
+
+
+def build_snapshot(usages, fetched_at, agents, value=None, profiles=None, setup=None,
+                   swap=None) -> dict:
+    """Fold collector outputs into a v3 HUD snapshot dict. Pure given its args:
     pass the Claude `profiles` list so each reading can be attributed to the
     subscription its config tree belongs to. No credentials ever land in the
     returned dict.
@@ -387,6 +413,9 @@ def build_snapshot(usages, fetched_at, agents, value=None, profiles=None, setup=
         # Absent whenever the question could not be asked. Never a stand-in for
         # "healthy": the card reads null as unknown and says so.
         "setup": _validate_json(setup),
+        # Null when cswap is absent or could not answer, which the card renders
+        # by omitting the rotation section — never as "rotation off".
+        "swap": _validate_json(_resolve_swap(swap, index)),
     }
 
 
@@ -427,6 +456,7 @@ class HudDaemon:
         self._value: dict | None = None
         self._agents: list = []
         self._setup: dict | None = None
+        self._swap: dict | None = None
         self._snapshot = build_snapshot([], None, [], None, [], None)
         self._last_comparable = _comparable(self._snapshot)
         self._stop = threading.Event()
@@ -440,7 +470,7 @@ class HudDaemon:
         with self._lock:
             snapshot = build_snapshot(
                 self._usages, self._fetched_at, self._agents,
-                self._value, self._profiles, self._setup,
+                self._value, self._profiles, self._setup, self._swap,
             )
             self._snapshot = snapshot
             comparable = _comparable(snapshot)
@@ -476,6 +506,15 @@ class HudDaemon:
             self._setup = setup
         self._rebuild()
 
+    def poll_swap_once(self) -> None:
+        # Same contract as setup: a failed ask writes null through rather than
+        # holding the last good answer, because the block's whole job is saying
+        # which account is billing *right now*.
+        swap = collect_swap()
+        with self._lock:
+            self._swap = swap
+        self._rebuild()
+
     def _loop(self, fn, interval: float) -> None:
         while not self._stop.is_set():
             try:
@@ -488,6 +527,7 @@ class HudDaemon:
     def start_polling(self) -> None:
         for fn, interval in ((self.poll_usage_once, USAGE_POLL_SECONDS),
                              (self.poll_setup_once, SETUP_POLL_SECONDS),
+                             (self.poll_swap_once, SWAP_POLL_SECONDS),
                              (self.poll_activity_once, ACTIVITY_POLL_SECONDS)):
             thread = threading.Thread(target=self._loop, args=(fn, interval), daemon=True)
             thread.start()
@@ -560,7 +600,8 @@ def serve(host: str = "127.0.0.1", port: int = 8737) -> None:
     daemon = HudDaemon()
     # prime once so /v1/hud has data on the first request; a failing collector must
     # log and let startup continue rather than kill the daemon (the loop retries).
-    for prime in (daemon.poll_usage_once, daemon.poll_setup_once, daemon.poll_activity_once):
+    for prime in (daemon.poll_usage_once, daemon.poll_setup_once,
+                  daemon.poll_swap_once, daemon.poll_activity_once):
         try:
             prime()
         except Exception as exc:

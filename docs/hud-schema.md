@@ -1,4 +1,4 @@
-# HUD snapshot schema (v2)
+# HUD snapshot schema (v3)
 
 The `agenthud serve` daemon maintains one JSON snapshot of subscription usage and
 live agent activity. It is written atomically to `~/.cache/agenthud/hud.json` on
@@ -7,8 +7,9 @@ contract for the Swift HUD app: the field names below are frozen and will not be
 renamed.
 
 **v2** added the `setup` block, and later `subscriptions[].read_at` and
-`subscriptions[].trees`. Everything from v1 is unchanged, and every field added
-since is optional on the reading side, so an older snapshot still decodes.
+`subscriptions[].trees`. **v3** added the `swap` block. Everything from v1 is
+unchanged, and every field added since is optional on the reading side, so an
+older snapshot still decodes.
 
 ## Serving it
 
@@ -37,6 +38,11 @@ Run it with `agenthud serve` (or `agenthud --serve`), optionally with `--host` a
 - Setup health polls every 60 seconds. It shells out to `~/.agents/bin/check-setup.sh`,
   which is well under a second but not free, and drift arrives at the speed of a
   person editing a config file.
+- Swap state polls every 30 seconds. `cswap list --json` answers from claude-swap's
+  own usage cache (its auto-rotator is the poller), so this adds nothing to the
+  rate-limited usage endpoint; the faster pace exists because a switch lands in
+  running sessions within about 30 seconds, and the card claiming the wrong
+  account is active is the confusion the block exists to remove.
 
 ## Top-level shape
 
@@ -48,7 +54,8 @@ Run it with `agenthud serve` (or `agenthud --serve`), optionally with `--host` a
   "agents": [ ... ],
   "value": { ... } | null,
   "soonest_reset": { ... } | null,
-  "setup": { ... } | null
+  "setup": { ... } | null,
+  "swap": { ... } | null
 }
 ```
 
@@ -61,6 +68,7 @@ Run it with `agenthud serve` (or `agenthud --serve`), optionally with `--host` a
 | `value` | object or null | Dollar value delivered vs. subscription cost. `null` when the pricing collector is unavailable. |
 | `soonest_reset` | object or null | The single earliest-resetting window across all subscriptions, or `null` when no window reports a reset time. |
 | `setup` | object or null | Whether the shared agent setup in `~/.agents` is healthy, verbatim from `check-setup.sh --json`. `null` means the question could not be asked — **never that the setup is fine**. |
+| `swap` | object or null | claude-swap's account rotation state: the managed slots, which one holds the default profile's credential, and whether the auto-rotator is alive. `null` means cswap is absent or could not answer — the card omits the section, **never renders it as "rotation off"**. |
 
 ## `subscriptions[]`
 
@@ -240,3 +248,43 @@ the card can never show yesterday's all-clear.
 
 The check exiting non-zero is *success*: exit 1 is how it reports problems. Only
 exit 2, its own "I could not run", produces a `null` block.
+
+## `swap`
+
+```json
+{
+  "active_slot": 1,
+  "accounts": [
+    {
+      "slot": 1,
+      "alias": "work",
+      "email": "audrey@carepilot.com",
+      "organization_uuid": "780d6270-...",
+      "subscription_id": "claude-team",
+      "active": true
+    }
+  ],
+  "auto": { "running": true, "threshold": 90 } | null
+}
+```
+
+Read from `cswap list --json` (claude-swap's documented scripting interface,
+schemaVersion 1), which answers from its own cache. cswap can rotate which
+account holds the default `~/.claude` profile's credential mid-session, so a
+config tree no longer implies an account; this block is the card's answer to
+"which account is billing right now".
+
+| field | type | meaning |
+|---|---|---|
+| `active_slot` | int or null | The cswap slot whose credential the default profile currently holds. `null` when cswap could not say. |
+| `accounts[].slot` | int | cswap's slot number for this account. |
+| `accounts[].alias` | string or null | The short name its owner gave it (`work`, `personal`). |
+| `accounts[].email` | string or null | The account's email, a display fallback when there is no alias. |
+| `accounts[].organization_uuid` | string or null | The organization the account belongs to — the same key `subscriptions[]` entries are grouped by. |
+| `accounts[].subscription_id` | string or null | The `subscriptions[]` entry this account resolves to on this machine, joined by organization uuid. `null` when the organization is not signed in here; an account is never guessed onto another subscription. |
+| `accounts[].active` | bool | Whether this slot holds the default profile's credential. |
+| `auto` | object or null | The auto-rotator's state: `running` (a `cswap auto` process is alive) and `threshold` (the window percentage it switches at, `null` when unreadable). The whole object is `null` when the question could not be asked — **unknown, never "off"**: a rotator we could not see might be switching accounts right now. |
+
+`null` as a whole whenever cswap is absent, hangs, fails, or answers outside the
+contract. The daemon clears the block on a failed poll rather than holding the
+last good answer, because the block's entire claim is about *right now*.

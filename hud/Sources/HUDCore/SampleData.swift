@@ -95,14 +95,28 @@ extension HUDSnapshot {
             ]
         )
 
+        let swap = SwapBlock(
+            activeSlot: 1,
+            accounts: [
+                SwapAccount(slot: 1, alias: "work", email: "j@carepilot.com",
+                            organizationUuid: "org-team", subscriptionID: "claude-team",
+                            active: true),
+                SwapAccount(slot: 2, alias: "personal", email: "j@home.com",
+                            organizationUuid: "org-max", subscriptionID: "claude-max",
+                            active: false),
+            ],
+            auto: SwapAuto(running: true, threshold: 90)
+        )
+
         return HUDSnapshot(
-            version: 2,
+            version: 3,
             generatedAt: previewNow,
             subscriptions: [personal, team, codex],
             agents: agents,
             value: value,
             soonestReset: SoonestReset(subscriptionID: "codex", kind: "session_5h", resetsAt: at(38)),
-            setup: .sampleWithProblems
+            setup: .sampleWithProblems,
+            swap: swap
         )
     }()
 }
@@ -180,7 +194,8 @@ extension HUDSnapshot {
             agents: s.agents,
             value: s.value,
             soonestReset: s.soonestReset,
-            setup: .sampleAllClear
+            setup: .sampleAllClear,
+            swap: s.swap
         )
     }()
 }

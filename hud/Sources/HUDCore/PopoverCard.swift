@@ -4,9 +4,10 @@ import AppKit
 #endif
 
 // The click-through card. Top to bottom: a slim header, one pod per subscription
-// showing every window it reports, the setup panel, the API-value strip, and a
-// footer. Colors are the dynamic Theme tokens, so the whole card follows the
-// system light/dark appearance. Width 520, radius 16, hairline border.
+// showing every window it reports, the account-rotation panel (when cswap
+// manages this machine), the setup panel, the API-value strip, and a footer.
+// Colors are the dynamic Theme tokens, so the whole card follows the system
+// light/dark appearance. Width 520, radius 16, hairline border.
 
 public struct PopoverCard: View {
     public let snapshot: HUDSnapshot?
@@ -30,6 +31,9 @@ public struct PopoverCard: View {
             if let snap = snapshot {
                 CardHeaderView(now: now)
                 LimitsSection(subs: orderedSubs, now: now)
+                if let swap = snap.swap {
+                    SwapSection(swap: swap, subs: orderedSubs)
+                }
                 SetupSection(setup: snap.setup)
                 if let value = snap.value {
                     ValueStripView(value: value, subs: orderedSubs, now: now)

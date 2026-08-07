@@ -16,6 +16,10 @@ public struct HUDSnapshot: Codable, Equatable {
     /// written by a daemon that predates this, or by one whose `~/.agents` has
     /// no `--json` yet — still decodes. `nil` means *unknown*, never healthy.
     public let setup: SetupBlock?
+    /// claude-swap's account rotation state. Optional so a pre-v3 snapshot, or
+    /// one from a machine without cswap, still decodes. `nil` means the
+    /// question could not be asked; the card omits the section entirely.
+    public let swap: SwapBlock?
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -25,6 +29,7 @@ public struct HUDSnapshot: Codable, Equatable {
         case value
         case soonestReset = "soonest_reset"
         case setup
+        case swap
     }
 
     public init(
@@ -34,7 +39,8 @@ public struct HUDSnapshot: Codable, Equatable {
         agents: [Agent],
         value: ValueBlock?,
         soonestReset: SoonestReset?,
-        setup: SetupBlock? = nil
+        setup: SetupBlock? = nil,
+        swap: SwapBlock? = nil
     ) {
         self.version = version
         self.generatedAt = generatedAt
@@ -43,6 +49,7 @@ public struct HUDSnapshot: Codable, Equatable {
         self.value = value
         self.soonestReset = soonestReset
         self.setup = setup
+        self.swap = swap
     }
 }
 
@@ -340,6 +347,87 @@ public struct SetupResult: Codable, Equatable, Identifiable {
         message = try c.decode(String.self, forKey: .message)
         fix = try c.decodeIfPresent(String.self, forKey: .fix) ?? ""
         fixCommand = try c.decodeIfPresent(String.self, forKey: .fixCommand) ?? ""
+    }
+}
+
+// MARK: - Account rotation (claude-swap)
+
+/// What cswap knows: the managed account slots, which one currently holds the
+/// default profile's credential, and whether the auto-rotator is alive. The
+/// daemon resolves each account to a subscription id by organization uuid, so
+/// the card can name accounts the way the pods do.
+public struct SwapBlock: Codable, Equatable {
+    /// The slot whose credential `~/.claude` currently holds, or nil when
+    /// cswap could not say.
+    public let activeSlot: Int?
+    public let accounts: [SwapAccount]
+    /// The auto-rotator's state. `nil` means it could not be asked — render as
+    /// unknown, never as "off".
+    public let auto: SwapAuto?
+
+    enum CodingKeys: String, CodingKey {
+        case activeSlot = "active_slot"
+        case accounts
+        case auto
+    }
+
+    public init(activeSlot: Int?, accounts: [SwapAccount], auto: SwapAuto?) {
+        self.activeSlot = activeSlot
+        self.accounts = accounts
+        self.auto = auto
+    }
+}
+
+public struct SwapAccount: Codable, Equatable, Identifiable {
+    public let slot: Int
+    public let alias: String?
+    public let email: String?
+    public let organizationUuid: String?
+    /// The subscription this account maps to on this machine, resolved by the
+    /// daemon through the organization uuid. Nil when the account's
+    /// organization is not signed in here.
+    public let subscriptionID: String?
+    public let active: Bool
+
+    public var id: Int { slot }
+
+    /// How the row names the account: the cswap alias is what its owner calls
+    /// it ("work"), the email stands in, and the slot number is the floor.
+    public var displayName: String {
+        alias ?? email ?? "slot \(slot)"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case slot, alias, email, active
+        case organizationUuid = "organization_uuid"
+        case subscriptionID = "subscription_id"
+    }
+
+    public init(
+        slot: Int,
+        alias: String?,
+        email: String?,
+        organizationUuid: String?,
+        subscriptionID: String?,
+        active: Bool
+    ) {
+        self.slot = slot
+        self.alias = alias
+        self.email = email
+        self.organizationUuid = organizationUuid
+        self.subscriptionID = subscriptionID
+        self.active = active
+    }
+}
+
+public struct SwapAuto: Codable, Equatable {
+    public let running: Bool
+    /// The window percentage the rotator switches at, when readable.
+    public let threshold: Int?
+
+    public init(running: Bool, threshold: Int?) {
+        self.running = running
+        self.threshold = threshold
     }
 }
 
