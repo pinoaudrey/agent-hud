@@ -8,6 +8,13 @@ load on the rate-limited usage endpoint. This module runs it and reduces the
 answer to what the card needs: which slots exist, which one is active, and
 whether the auto-rotator is alive.
 
+It also keeps the usage cswap read for each slot. The card normally reads a
+subscription through its own config tree, and cswap invalidates the token of
+every inactive profile when it switches and at boot, so those readings fail
+until Claude Code runs against each profile again. cswap's reading for the
+slot is the same number from the same endpoint, so the snapshot builder uses
+it whenever a tree's own reading is missing (see `serve.build_snapshot`).
+
 Everything fails closed, the same way setup_health does: a machine without
 cswap, a hung call, or output that is not the contract produces no block at
 all, so the card omits the rotation section rather than invent one. The auto
@@ -21,7 +28,10 @@ import json
 import re
 import shutil
 import subprocess
+from datetime import datetime
 from pathlib import Path
+
+from usage import ToolUsage, UsageWindow
 
 # cswap answers from its cache in about a second; the ceiling only exists so a
 # wedged call cannot hold the poll thread.
@@ -74,6 +84,52 @@ def _accounts(raw: dict) -> list[dict] | None:
     return accounts
 
 
+def _parse_ts(value) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _windows(usage: dict) -> list[UsageWindow]:
+    """cswap's usage block as usage.py windows: the 5h and 7d windows, then each
+    model-scoped weekly limit under its own name, the order the card expects."""
+    windows = []
+    named = [("5h", usage.get("fiveHour")), ("7d", usage.get("sevenDay"))]
+    scoped = usage.get("scoped") if isinstance(usage.get("scoped"), list) else []
+    named.extend((str(win.get("name") or "scoped"), win) for win in scoped if isinstance(win, dict))
+    for label, win in named:
+        if isinstance(win, dict) and isinstance(win.get("pct"), (int, float)):
+            windows.append(UsageWindow(label, float(win["pct"]), _parse_ts(win.get("resetsAt"))))
+    return windows
+
+
+def _reading(entry: dict) -> ToolUsage | None:
+    """The usage cswap last fetched for one slot, or None when it has no clean
+    reading. An error status or an empty block yields nothing rather than a
+    card built from a number cswap itself does not trust."""
+    if entry.get("usageStatus") != "ok" or not isinstance(entry.get("usage"), dict):
+        return None
+    windows = _windows(entry["usage"])
+    if not windows:
+        return None
+    return ToolUsage(tool="claude", windows=windows, read_at=_parse_ts(entry.get("usageFetchedAt")))
+
+
+def _readings(raw: dict) -> dict[str, ToolUsage]:
+    """organization uuid -> cswap's reading for that account. Keyed the way the
+    snapshot groups subscriptions, so the join is exact."""
+    readings = {}
+    for entry in raw.get("accounts", []):
+        org = entry.get("organizationUuid")
+        reading = _reading(entry)
+        if isinstance(org, str) and org and reading is not None:
+            readings[org] = reading
+    return readings
+
+
 def _auto(cswap: str, run=_run) -> dict | None:
     """Whether the auto-rotator is alive, and the threshold it switches at.
     `None` when the question could not be asked — never a stand-in for "off"."""
@@ -118,4 +174,7 @@ def collect_swap(run=_run) -> dict | None:
         "active_slot": active_slot if isinstance(active_slot, int) else None,
         "accounts": accounts,
         "auto": _auto(cswap, run),
+        # For the snapshot builder only. It fills subscriptions the daemon could
+        # not read itself and is stripped before the block reaches the card.
+        "readings": _readings(raw),
     }
