@@ -324,24 +324,85 @@ def _pick_reading(existing, candidate):
     return existing
 
 
-def _resolve_swap(swap: dict | None, index) -> dict | None:
-    """The swap block with each account resolved to the subscription its
-    organization maps to. cswap and this daemon key accounts the same way (the
-    organization uuid), so the join is exact; an account whose organization is
-    not signed in on this machine keeps a null subscription_id rather than
-    being guessed onto someone else's pod."""
-    if swap is None:
-        return None
+def _subscriptions_by_org(index) -> dict[str, str]:
+    """organization uuid -> subscription id, for every tree that names one."""
     by_org: dict[str, str] = {}
     for sub in index.values():
         for profile in sub.profiles:
             if profile.org is not None:
                 by_org[profile.org.uuid] = sub.id
+    return by_org
+
+
+def _account_label(account: dict) -> str:
+    alias = account.get("alias")
+    if alias:
+        return f"Claude {alias.title()}"
+    email = account.get("email") or ""
+    local = email.split("@")[0]
+    return f"Claude {local}" if local else f"Claude {account.get('slot')}"
+
+
+def _cswap_fallback(subscriptions, by_id, index, swap, now, soonest) -> tuple:
+    """Fill every Claude subscription the daemon could not read for itself
+    from the reading cswap holds for that account.
+
+    A subscription is normally read through its tree's own token. cswap
+    invalidates the token of every inactive profile when it switches and at
+    boot, so those cards would read "unlock Keychain" until Claude Code runs
+    against each profile again, and an account with no profile at all would not
+    be on the card. `cswap list --json` carries a reading for every slot
+    regardless, from the same endpoint. So a subscription with no windows takes
+    cswap's reading, and an account with no subscription gets one named after
+    the account. A reading the tree gave is never replaced: it is the fresher
+    of the two and it names the plan.
+
+    Returns the earliest reset seen and, by organization uuid, the id of each
+    subscription created here, so the swap block can resolve those accounts."""
+    readings = (swap or {}).get("readings") or {}
+    if not readings:
+        return soonest, {}
+    by_org = _subscriptions_by_org(index)
+    org_of = {sub_id: org for org, sub_id in by_org.items()}
+    for i, sub in enumerate(subscriptions):
+        reading = readings.get(org_of.get(sub["id"], ""))
+        if sub["provider"] != "claude" or sub["windows"] or reading is None:
+            continue
+        entry, soonest = _subscription_entry(
+            reading, sub["id"], sub["label"], sub["trees"], sub["active"], now, soonest)
+        subscriptions[i] = by_id[sub["id"]] = entry
+
+    created: dict[str, str] = {}
+    for account in swap.get("accounts", []):
+        org = account.get("organization_uuid") or ""
+        reading = readings.get(org)
+        if not org or org in by_org or reading is None:
+            continue
+        sub_id = f"claude-{org[:8]}"
+        entry, soonest = _subscription_entry(
+            reading, sub_id, _account_label(account), [], bool(account.get("active")), now, soonest)
+        subscriptions.append(entry)
+        by_id[sub_id] = entry
+        created[org] = sub_id
+    return soonest, created
+
+
+def _resolve_swap(swap: dict | None, index, created: dict[str, str] | None = None) -> dict | None:
+    """The swap block with each account resolved to the subscription its
+    organization maps to. cswap and this daemon key accounts the same way (the
+    organization uuid), so the join is exact; an account whose organization is
+    not signed in on this machine keeps a null subscription_id rather than
+    being guessed onto someone else's pod. `created` names the subscriptions
+    built from cswap's own readings, which no tree maps to. The readings
+    themselves stay behind: they are the builder's input, not the card's."""
+    if swap is None:
+        return None
+    by_org = {**_subscriptions_by_org(index), **(created or {})}
     accounts = [
         {**account, "subscription_id": by_org.get(account.get("organization_uuid") or "")}
         for account in swap.get("accounts", [])
     ]
-    return {**swap, "accounts": accounts}
+    return {**{k: v for k, v in swap.items() if k != "readings"}, "accounts": accounts}
 
 
 def build_snapshot(usages, fetched_at, agents, value=None, profiles=None, setup=None,
@@ -386,6 +447,7 @@ def build_snapshot(usages, fetched_at, agents, value=None, profiles=None, setup=
             continue
         by_id[sub_id] = entry
         subscriptions.append(entry)
+    soonest, created = _cswap_fallback(subscriptions, by_id, index, swap, now, soonest)
 
     agents_out = []
     for agent in agents:
@@ -424,7 +486,7 @@ def build_snapshot(usages, fetched_at, agents, value=None, profiles=None, setup=
         "setup": _validate_json(setup),
         # Null when cswap is absent or could not answer, which the card renders
         # by omitting the rotation section — never as "rotation off".
-        "swap": _validate_json(_resolve_swap(swap, index)),
+        "swap": _validate_json(_resolve_swap(swap, index, created)),
     }
 
 

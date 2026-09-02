@@ -305,6 +305,102 @@ def test_fresh_reading_is_not_flagged_stale():
     assert build_snapshot([_claude_usage()], _now(), [])["subscriptions"][0]["stale"] is None
 
 
+# ---------------------------------------------------------------- cswap fallback
+
+
+def _cswap_reading(pct_5h: float = 19.0) -> ToolUsage:
+    return ToolUsage(
+        tool="claude",
+        windows=[UsageWindow("5h", pct_5h, _now() + timedelta(hours=2)),
+                 UsageWindow("7d", 21.0, _now() + timedelta(days=5)),
+                 UsageWindow("Fable", 35.0, _now() + timedelta(days=5))],
+        read_at=_now() - timedelta(minutes=1),
+    )
+
+
+def _swap_with(org: str, reading: ToolUsage | None, *, slot: int = 3, alias=None,
+               active: bool = False) -> dict:
+    return {
+        "active_slot": 1,
+        "accounts": [{"slot": slot, "alias": alias, "email": "a@home.com",
+                      "organization_uuid": org, "subscription_id": None, "active": active}],
+        "auto": None,
+        "readings": {org: reading} if reading else {},
+    }
+
+
+def test_a_tree_the_daemon_could_not_read_takes_cswaps_reading(tmp_path: Path):
+    """cswap invalidated the profile's token, so the tree's own reading is a
+    Keychain error. cswap still holds a clean reading for the slot, and the
+    card shows that instead of a blank row."""
+    write_cswap_store(tmp_path, [{"num": 3, "org_uuid": MAX_ORG, "org_type": "claude_max",
+                                  "email": "a@home.com"}])
+    profiles = claude_profiles(tmp_path)
+    dead = ToolUsage(tool="claude", error="unlock Keychain or sign in to Claude Code",
+                     config_dir=str(profiles[0].config_dir))
+    snap = build_snapshot([dead], _now(), [], profiles=profiles,
+                          swap=_swap_with(MAX_ORG, _cswap_reading()))
+    sub = snap["subscriptions"][0]
+    assert sub["id"] == "claude-max"  # the tree still names the plan
+    assert [w["kind"] for w in sub["windows"]] == ["session_5h", "weekly_7d", "weekly_fable"]
+    assert sub["windows"][0]["pct_left"] == 81
+    assert sub["tightest"]["kind"] == "weekly_fable"
+    assert sub["stale"] is None
+    assert sub["read_at"] is not None
+    assert snap["swap"]["accounts"][0]["subscription_id"] == "claude-max"
+    assert "readings" not in snap["swap"]
+
+
+def test_a_reading_from_the_tree_beats_cswaps(tmp_path: Path):
+    """The tree's reading is the fresher of the two and names the plan, so a
+    cswap reading never replaces one."""
+    write_cswap_store(tmp_path, [{"num": 3, "org_uuid": MAX_ORG, "org_type": "claude_max",
+                                  "email": "a@home.com"}])
+    profiles = claude_profiles(tmp_path)
+    live = _claude_usage(plan="Max", config_dir=str(profiles[0].config_dir))
+    snap = build_snapshot([live], _now(), [], profiles=profiles,
+                          swap=_swap_with(MAX_ORG, _cswap_reading(pct_5h=90.0)))
+    assert snap["subscriptions"][0]["windows"][0]["pct_left"] == 62
+
+
+def test_a_rate_limited_tree_keeps_its_cached_bars_over_cswaps(tmp_path: Path):
+    write_cswap_store(tmp_path, [{"num": 3, "org_uuid": MAX_ORG, "org_type": "claude_max",
+                                  "email": "a@home.com"}])
+    profiles = claude_profiles(tmp_path)
+    cached = _claude_usage(plan="Max", stale="rate limited · retry 4m",
+                           config_dir=str(profiles[0].config_dir))
+    sub = build_snapshot([cached], _now(), [], profiles=profiles,
+                         swap=_swap_with(MAX_ORG, _cswap_reading(pct_5h=90.0)))["subscriptions"][0]
+    assert sub["windows"][0]["pct_left"] == 62
+    assert sub["stale"] == "rate limited, retry 4m"
+
+
+def test_an_account_with_no_tree_still_gets_a_card_from_cswap():
+    """A slot cswap manages but no profile was ever bootstrapped for. Before,
+    it was on the card only while it was the active login; now cswap's
+    reading carries it, named after the account since no tree names the plan."""
+    snap = build_snapshot([], _now(), [], profiles=[],
+                          swap=_swap_with(MAX_ORG, _cswap_reading(), alias="personal"))
+    sub = snap["subscriptions"][0]
+    assert sub["id"] == f"claude-{MAX_ORG[:8]}"
+    assert sub["label"] == "Claude Personal"
+    assert sub["provider"] == "claude" and sub["trees"] == [] and sub["active"] is False
+    assert sub["windows"][0]["pct_left"] == 81
+    assert snap["swap"]["accounts"][0]["subscription_id"] == sub["id"]
+    assert snap["soonest_reset"]["subscription_id"] == sub["id"]
+
+
+def test_an_account_with_no_alias_is_named_by_its_email():
+    snap = build_snapshot([], _now(), [], profiles=[], swap=_swap_with(MAX_ORG, _cswap_reading()))
+    assert snap["subscriptions"][0]["label"] == "Claude a"
+
+
+def test_no_reading_from_cswap_leaves_the_card_alone():
+    snap = build_snapshot([], _now(), [], profiles=[], swap=_swap_with(MAX_ORG, None))
+    assert snap["subscriptions"] == []
+    assert snap["swap"]["accounts"][0]["subscription_id"] is None
+
+
 # ---------------------------------------------------------------- value
 
 

@@ -72,7 +72,55 @@ def test_a_healthy_answer_reduces_to_the_block():
              "organization_uuid": "org-home", "subscription_id": None, "active": False},
         ],
         "auto": {"running": True, "threshold": 90},
+        "readings": {},
     }
+
+
+USAGE_OK = {
+    "usageStatus": "ok",
+    "usageFetchedAt": "2026-09-02T18:35:44Z",
+    "usage": {
+        "fiveHour": {"pct": 19.0, "resetsAt": "2026-09-02T21:10:00+00:00"},
+        "sevenDay": {"pct": 21.0, "resetsAt": "2026-09-07T23:00:00+00:00"},
+        "scoped": [{"pct": 35.0, "resetsAt": "2026-09-07T23:00:00+00:00", "name": "Fable"}],
+    },
+}
+
+
+def _block_with(accounts):
+    return collect_swap(run=_runner(
+        list_out=_completed(json.dumps({**LIST_JSON, "accounts": accounts})),
+        config_out=_completed(CONFIG_TEXT),
+        pgrep_rc=0,
+    ))
+
+
+def test_a_slot_with_a_clean_usage_reading_is_kept_as_a_reading():
+    """cswap's own reading for a slot is the builder's fallback when the tree
+    cannot be read. It comes out in usage.py's shape, keyed by organization."""
+    block = _block_with([{**LIST_JSON["accounts"][1], **USAGE_OK}])
+    reading = block["readings"]["org-home"]
+    assert reading.tool == "claude"
+    assert [(w.label, w.pct) for w in reading.windows] == [("5h", 19.0), ("7d", 21.0), ("Fable", 35.0)]
+    assert reading.windows[0].resets_at.isoformat() == "2026-09-02T21:10:00+00:00"
+    assert reading.read_at.isoformat() == "2026-09-02T18:35:44+00:00"
+
+
+def test_a_slot_cswap_could_not_read_yields_no_reading():
+    """A number cswap does not trust is not a fallback. Neither is a block with
+    nothing in it, nor a slot with no organization to key it on."""
+    home = LIST_JSON["accounts"][1]
+    accounts = [
+        {**home, **USAGE_OK, "usageStatus": "error"},
+        {**home, "organizationUuid": "org-empty", "usageStatus": "ok", "usage": {}},
+        {**home, **USAGE_OK, "organizationUuid": None},
+    ]
+    assert _block_with(accounts)["readings"] == {}
+
+
+def test_readings_never_reach_the_account_rows():
+    block = _block_with([{**LIST_JSON["accounts"][1], **USAGE_OK}])
+    assert "usage" not in block["accounts"][0]
 
 
 def test_no_cswap_on_the_machine_omits_the_block(monkeypatch):
