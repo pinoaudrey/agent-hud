@@ -145,6 +145,8 @@ def _window_kind(provider: str, label: str) -> str:
         return "session_5h"
     if label == "7d":
         return "weekly_7d"
+    if label == "spend":
+        return "spend"  # Enterprise monthly spend cap; no duration, no pace
     return "weekly_fable"  # the model-scoped weekly limit (Fable on Max/Team)
 
 
