@@ -51,6 +51,48 @@ def test_parse_claude_usage_includes_fable_scoped_limit():
     assert windows[-1].resets_at is not None
 
 
+def test_parse_claude_usage_enterprise_spend_cap():
+    from usage import _parse_claude_usage
+
+    # An Enterprise account: every rate window null, one monthly spend block.
+    payload = {
+        "five_hour": None,
+        "seven_day": None,
+        "limits": [],
+        "spend": {
+            "used": {"amount_minor": 106706, "currency": "USD", "exponent": 2},
+            "limit": {"amount_minor": 305000, "currency": "USD", "exponent": 2},
+            "percent": 35,
+            "enabled": True,
+        },
+    }
+    windows = _parse_claude_usage(payload)
+    assert [w.label for w in windows] == ["spend"]
+    assert windows[0].pct == 35.0
+    assert windows[0].resets_at is None
+
+
+def test_parse_claude_usage_spend_ignored_when_rate_windows_exist():
+    from usage import _parse_claude_usage
+
+    # A Max account with extra-usage credits also carries a spend block; the
+    # rate windows stay the card and the spend block stays off it.
+    payload = {
+        "five_hour": {"utilization": 41.0, "resets_at": "2026-09-19T20:40:00+00:00"},
+        "seven_day": {"utilization": 28.0, "resets_at": "2026-09-24T17:00:00+00:00"},
+        "spend": {"percent": 12, "enabled": True},
+    }
+    windows = _parse_claude_usage(payload)
+    assert [w.label for w in windows] == ["5h", "7d"]
+
+
+def test_window_kind_maps_spend():
+    from serve import _window_kind
+
+    assert _window_kind("claude", "spend") == "spend"
+    assert _window_kind("claude", "fable") == "weekly_fable"
+
+
 def test_codex_usage_from_rollouts(codex_root: Path):
     from usage import fetch_codex_usage
 

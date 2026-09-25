@@ -326,6 +326,14 @@ def _parse_claude_usage(payload: dict) -> list[UsageWindow]:
             )
         )
         break  # one scoped limit is enough
+    # An Enterprise (spend-cap) account reports every rate window as null; its
+    # one limit is the monthly `spend` block. Surface it as a window so the
+    # card gets a bar instead of rendering empty. Only when no rate window
+    # exists: on Max/Team the spend block is extra-usage credits, a different
+    # thing, and those cards already have their windows.
+    spend = payload.get("spend")
+    if not windows and isinstance(spend, dict) and spend.get("percent") is not None:
+        windows.append(UsageWindow(label="spend", pct=float(spend["percent"])))
     return windows
 
 
