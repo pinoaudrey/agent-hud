@@ -5,22 +5,27 @@ import AppKit
 #endif
 @testable import HUDCore
 
-/// The menu-bar glance: which plans reach the bar, the number each one shows,
-/// when the number takes a pressure color, the mark on the signed-in plan, and
-/// the fact that it draws in real color rather than as a template. That last
-/// one is the reason `ink` exists — a template image gets AppKit's tint for
-/// free, and giving that up means the glance has to resolve its own foreground
-/// against the bar's appearance instead.
+/// The menu-bar glance: which plan reaches the bar, the letter, number and tag
+/// it reads as, when the number gives way to a dash, when it takes a pressure
+/// color, and the fact that it draws in real color rather than as a template.
+/// That last one is the reason `ink` exists: a template image gets AppKit's
+/// tint for free, and giving that up means the glance has to resolve its own
+/// foreground against the bar's appearance instead.
 final class MenuBarGlanceTests: XCTestCase {
 
     private func window(_ kind: String, _ pctLeft: Int?) -> HUDCore.Window {
         HUDCore.Window(kind: kind, pctLeft: pctLeft, resetsAt: nil, pace: nil)
     }
 
+    /// `tightest` the way the daemon builds it: the window with the least left,
+    /// among the ones that have a reading.
     private func sub(_ id: String, provider: String = "claude", active: Bool = false,
+                     readAt: Date? = nil, stale: String? = nil,
                      windows: [HUDCore.Window]) -> Subscription {
-        Subscription(id: id, provider: provider, label: id, active: active,
-                     windows: windows, tightest: windows.first, stale: nil, activeAgents: 0)
+        let tightest = windows.filter { $0.pctLeft != nil }.min { $0.pctLeft! < $1.pctLeft! }
+        return Subscription(id: id, provider: provider, label: id, active: active,
+                            readAt: readAt, windows: windows, tightest: tightest,
+                            stale: stale, activeAgents: 0)
     }
 
     private func snapshot(
@@ -49,41 +54,141 @@ final class MenuBarGlanceTests: XCTestCase {
         XCTAssertNotNil(snap.soonestReset)
     }
 
-    // MARK: - Which plans reach the bar
+    // MARK: - Which plan reaches the bar
 
     func testCodexStaysOffTheBar() {
         // The bar answers "can I keep working right now"; Codex has no session
         // limit and no switcher, so it never changes that answer minute to
-        // minute. It reads on the card, a click away.
-        let snap = snapshot([sub("codex", provider: "codex", windows: [window("weekly", 81)]),
-                             sub("claude-max", windows: [window("session_5h", 74)])])
+        // minute. It reads on the card, a click away. The daemon marks Codex
+        // active too, so `active` alone must not pick it.
+        let snap = snapshot([sub("codex", provider: "codex", active: true,
+                                 windows: [window("weekly", 81)]),
+                             sub("claude-max", active: true, windows: [window("session_5h", 74)])])
         let glance = MenuBarContentView(snapshot: snap, now: now)
-        XCTAssertEqual(glance.glanceSubs.map { $0.id }, ["claude-max"])
+        XCTAssertEqual(glance.signedIn?.id, "claude-max")
     }
 
-    func testClaudePlansKeepTheCardsOrder() {
+    func testOnlyTheSignedInPlanReachesTheBar() {
+        // The work plan is pressured, but it is not the one you are spending,
+        // so it waits on the card.
+        let snap = snapshot([sub("claude-team", windows: [window("session_5h", 4)]),
+                             sub("claude-max", active: true, windows: [window("session_5h", 74)])])
+        let glance = MenuBarContentView(snapshot: snap, now: now)
+        XCTAssertEqual(glance.readout, GlanceReadout(sub: snap.subscriptions[1], now: now))
+        XCTAssertEqual(glance.readout?.pctLeft, 74)
+    }
+
+    func testNoSignedInClaudePlanFallsBackToTheOfflineDashes() {
+        // An older daemon marks nothing active. Guessing a plan would put the
+        // wrong account's number on the bar.
         let snap = snapshot([sub("claude-team", windows: [window("session_5h", 18)]),
                              sub("claude-max", windows: [window("session_5h", 74)])])
-        let glance = MenuBarContentView(snapshot: snap, now: now)
-        XCTAssertEqual(glance.glanceSubs.map { $0.id }, ["claude-team", "claude-max"])
+        XCTAssertNil(MenuBarContentView(snapshot: snap, now: now).readout)
+        XCTAssertNil(MenuBarContentView(snapshot: nil, now: now).readout)
     }
 
-    // MARK: - The signed-in mark
+    // MARK: - The readout
 
-    func testTheMarkNeedsMoreThanOneClaudePlan() {
-        // Same rule as the card's SIGNED IN badge: a mark that could never move
-        // is decoration.
-        let one = MenuBarContentView(
-            snapshot: snapshot([sub("claude-max", active: true,
-                                    windows: [window("session_5h", 74)])]), now: now)
-        XCTAssertFalse(one.marksActive)
+    func testPersonalActiveReadsLetterTightestNumberAndTag() {
+        let max = sub("claude-max", active: true,
+                      windows: [window("session_5h", 61), window("weekly_7d", 83),
+                                window("weekly_fable", 90)])
+        let readout = GlanceReadout(sub: max, now: now)
+        XCTAssertEqual(readout.letter, "P")
+        XCTAssertEqual(readout.pctLeft, 61)
+        XCTAssertEqual(readout.tag, "5h")
+    }
 
-        let two = MenuBarContentView(
-            snapshot: snapshot([sub("claude-team", active: true,
-                                    windows: [window("session_5h", 18)]),
-                                sub("claude-max", windows: [window("session_5h", 74)])]),
-            now: now)
-        XCTAssertTrue(two.marksActive)
+    func testTheTagFollowsTheTightestWindowWhenItMoves() {
+        // The reason the tag exists: once the week is drier than the session,
+        // the number is the week's, and the bar has to say so.
+        let max = sub("claude-max", active: true,
+                      windows: [window("session_5h", 96), window("weekly_7d", 22)])
+        let readout = GlanceReadout(sub: max, now: now)
+        XCTAssertEqual(readout.pctLeft, 22)
+        XCTAssertEqual(readout.tag, "wk")
+    }
+
+    func testWorkActiveReadsW() {
+        let team = sub("claude-team", active: true,
+                       windows: [window("session_5h", 40), window("weekly_fable", 31)])
+        let readout = GlanceReadout(sub: team, now: now)
+        XCTAssertEqual(readout.letter, "W")
+        XCTAssertEqual(readout.pctLeft, 31)
+        XCTAssertEqual(readout.tag, "fable")
+    }
+
+    func testAnEnterpriseSpendCapReadsAsDollars() {
+        // An Enterprise seat reports no rate windows; its one limit is the
+        // monthly spend cap, which has no duration to name.
+        let enterprise = sub("claude-enterprise", active: true, windows: [window("spend", 58)])
+        let readout = GlanceReadout(sub: enterprise, now: now)
+        XCTAssertEqual(readout.letter, "W")
+        XCTAssertEqual(readout.pctLeft, 58)
+        XCTAssertEqual(readout.tag, "$")
+    }
+
+    func testTheAccountLetterComesFromThePlanInTheId() {
+        func letter(_ id: String, provider: String = "claude") -> String? {
+            sub(id, provider: provider, windows: []).accountLetter
+        }
+        XCTAssertEqual(letter("claude-max"), "P")
+        XCTAssertEqual(letter("claude-pro"), "P")
+        // An organization with no plan word, named after an email address.
+        XCTAssertEqual(letter("claude"), "P")
+        XCTAssertEqual(letter("claude-team"), "W")
+        XCTAssertEqual(letter("claude-enterprise"), "W")
+        // Two Team orgs, told apart by the organization's name.
+        XCTAssertEqual(letter("claude-team-carepilot"), "W")
+        // A tree with no readable account says nothing about whose it is.
+        XCTAssertNil(letter("claude-default"))
+        XCTAssertNil(letter("codex", provider: "codex"))
+        XCTAssertEqual(GlanceReadout(sub: sub("claude-default", windows: []), now: now).letter, "?")
+    }
+
+    // MARK: - An unreadable plan
+
+    func testAPlanWithNoReadingKeepsItsLetterAndLosesTheNumber() {
+        // Absence never reads as healthy. The letter stays, because which
+        // account is signed in is still true.
+        let noWindows = sub("claude-max", active: true, windows: [])
+        let nullWindows = sub("claude-max", active: true, windows: [window("session_5h", nil)])
+        for plan in [noWindows, nullWindows] {
+            let readout = GlanceReadout(sub: plan, now: now)
+            XCTAssertEqual(readout.letter, "P")
+            XCTAssertNil(readout.pctLeft)
+            XCTAssertNil(readout.tag)
+        }
+    }
+
+    func testAReadingPastTheFreshnessLimitIsADashNotTheLastNumber() {
+        let old = sub("claude-team", active: true,
+                      readAt: now.addingTimeInterval(-(Subscription.freshnessLimit + 60)),
+                      windows: [window("session_5h", 70)])
+        let fresh = sub("claude-team", active: true, readAt: now.addingTimeInterval(-120),
+                        windows: [window("session_5h", 70)])
+        XCTAssertNil(GlanceReadout(sub: old, now: now).pctLeft)
+        XCTAssertEqual(GlanceReadout(sub: fresh, now: now).pctLeft, 70)
+    }
+
+    func testAStaleFlagAloneKeepsTheLastNumber() {
+        // A rate-limit cooldown serves the last good reading with a reason
+        // attached. That number is minutes old and still true enough to show.
+        let cooling = sub("claude-team", active: true, readAt: now.addingTimeInterval(-120),
+                          stale: "rate limited, retry 4m", windows: [window("session_5h", 70)])
+        let readout = GlanceReadout(sub: cooling, now: now)
+        XCTAssertEqual(readout.pctLeft, 70)
+        XCTAssertEqual(readout.tag, "5h")
+    }
+
+    func testADeadTokenAgesIntoTheDash() {
+        // The daemon keeps `read_at` at the last good read while it serves the
+        // cached numbers, so a plan that never recovers stops vouching for them.
+        let signedOut = sub("claude-team", active: true,
+                            readAt: now.addingTimeInterval(-(Subscription.freshnessLimit + 60)),
+                            stale: "signed out, run claude auth login",
+                            windows: [window("session_5h", 70)])
+        XCTAssertNil(GlanceReadout(sub: signedOut, now: now).pctLeft)
     }
 
     // MARK: - The number's color
@@ -149,6 +254,26 @@ final class MenuBarGlanceTests: XCTestCase {
                               ("clear", SetupBlock.sampleAllClear)] {
             let snap = snapshot(HUDSnapshot.sample.subscriptions,
                                 soonest: HUDSnapshot.sample.soonestReset, setup: setup)
+            for ink in [Color.white, Color.black] {
+                let renderer = ImageRenderer(
+                    content: MenuBarContentView(snapshot: snap, now: now, ink: ink)
+                )
+                renderer.scale = 2
+                XCTAssertNotNil(renderer.nsImage, "\(name) glance rendered nothing")
+            }
+        }
+    }
+
+    @MainActor
+    func testEveryReadoutStateRendersInBothInks() throws {
+        let states: [(String, HUDSnapshot?)] = [
+            ("spend", snapshot([sub("claude-enterprise", active: true,
+                                    windows: [window("spend", 12)])])),
+            ("unreadable", snapshot([sub("claude-max", active: true, windows: [])])),
+            ("none signed in", snapshot([sub("claude-max", windows: [window("session_5h", 61)])])),
+            ("offline", nil),
+        ]
+        for (name, snap) in states {
             for ink in [Color.white, Color.black] {
                 let renderer = ImageRenderer(
                     content: MenuBarContentView(snapshot: snap, now: now, ink: ink)

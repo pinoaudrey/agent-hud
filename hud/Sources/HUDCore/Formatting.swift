@@ -40,7 +40,23 @@ public enum Fmt {
         case "weekly_7d":    return "7d"
         case "weekly_fable": return "F"
         case "weekly":       return "7d"
+        case "spend":        return "$"
         default:             return "•"
+        }
+    }
+
+    /// The tag that follows the menu-bar number and says which window it is.
+    /// The number is the plan's tightest window, which moves between windows as
+    /// they drain and reset, so without the tag "61" could mean any of them.
+    /// "wk" rather than "7d" because the bar has no other duration to set it
+    /// against, and "$" for an Enterprise spend cap, which has no duration.
+    public static func glanceTag(kind: String) -> String {
+        switch kind {
+        case "session_5h":            return "5h"
+        case "weekly_7d", "weekly":   return "wk"
+        case "weekly_fable":          return "fable"
+        case "spend":                 return "$"
+        default:                      return kind
         }
     }
 
@@ -54,6 +70,7 @@ public enum Fmt {
         case "weekly_7d":    return "7d"
         case "weekly_fable": return "fable"
         case "weekly":       return "weekly"
+        case "spend":        return "spend"
         default:             return kind
         }
     }

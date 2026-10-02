@@ -1,25 +1,32 @@
 import SwiftUI
 
-/// The menu-bar status-item content: each Claude plan's 5-hour headroom as a
-/// number, a mark on the signed-in plan, and a single dot when the agent setup
-/// has problems.
+/// The menu-bar status-item content: how much the signed-in Claude plan has
+/// left, and a single dot when the agent setup has problems.
+///
+/// The bar speaks for one plan, the one a bare `claude` would spend right now,
+/// because that is the only budget the work in front of you draws on. It reads
+/// as a letter, a number and a tag, `P 61 5h`: which account (P for a plan you
+/// hold yourself, W for a seat at work), the percent left in that plan's
+/// tightest window, and which window that is. The tag is there because the
+/// tightest window moves as limits drain and reset, and a bare number would
+/// not say whether it was the 5-hour session, the week, Fable, or an Enterprise
+/// spend cap. Every other plan, and every other window, reads on the card a
+/// click away.
 ///
 /// Codex is deliberately absent. The bar answers "can I keep working right
 /// now", and with no switcher and no session limit, Codex never changes that
 /// answer minute to minute; its quota reads on the card, a click away.
 ///
-/// The number is the 5-hour window because that is the immediate budget — the
-/// weekly limits move too slowly to be worth a permanent spot in the bar, and
-/// they read on the card with their resets. There is likewise no countdown: the
-/// only one that fits is the soonest reset across every plan, which is a single
-/// number that does not say which plan it belongs to.
+/// There is no countdown: the only one that fits is the soonest reset across
+/// every plan, which is a single number that does not say which plan it
+/// belongs to.
 ///
 /// The glance is **not** rendered as a template image: a template throws its
 /// pixels away and takes AppKit's tint, which is what keeps a monochrome icon
 /// legible over any wallpaper but would also flatten the pressure colors into
 /// one shade. So it draws in real color, and everything that is *not* severity
 /// resolves against the menu bar's own appearance instead, which is what `ink`
-/// carries — see AppDelegate, which re-renders whenever that appearance changes.
+/// carries (see AppDelegate, which re-renders whenever that appearance changes).
 public struct MenuBarContentView: View {
     public let snapshot: HUDSnapshot?
     public var now: Date
@@ -34,15 +41,15 @@ public struct MenuBarContentView: View {
         self.ink = ink
     }
 
-    /// The plans the bar shows: Claude only, in the card's order.
-    public var glanceSubs: [Subscription] {
-        (snapshot?.orderedSubscriptions ?? []).filter { $0.provider == "claude" }
+    /// The one plan the bar speaks for: the signed-in Claude plan. Nil when
+    /// the daemon is offline, or names no Claude plan as signed in.
+    public var signedIn: Subscription? {
+        snapshot?.subscriptions.first { $0.provider == "claude" && $0.active }
     }
 
-    /// Same rule as the card's SIGNED IN badge: with a single Claude plan the
-    /// mark could never move, and a mark that never moves is decoration.
-    public var marksActive: Bool {
-        glanceSubs.count > 1
+    /// What the bar draws for the signed-in plan, or nil for the offline dashes.
+    public var readout: GlanceReadout? {
+        signedIn.map { GlanceReadout(sub: $0, now: now) }
     }
 
     /// Ink while the plan is healthy, the severity color once the window is
@@ -59,17 +66,11 @@ public struct MenuBarContentView: View {
             if needsYouCount > 0 {
                 NeedsYouBadge(count: needsYouCount)
             }
-            if !glanceSubs.isEmpty {
-                ForEach(glanceSubs) { sub in
-                    GlanceNumber(
-                        pctLeft: sub.glanceWindow?.pctLeft,
-                        marked: marksActive && sub.active,
-                        ink: ink
-                    )
-                }
+            if let readout {
+                GlanceReadoutView(readout: readout, ink: ink)
             } else {
-                // Offline, or a machine with no Claude plan at all. Dashes, not
-                // zeros: "we cannot see the plans" must not read as "spent".
+                // Offline, or no Claude plan signed in. Dashes, not zeros: "we
+                // cannot see the plans" must not read as "spent".
                 ForEach(0..<2, id: \.self) { _ in
                     Text("–")
                         .font(Theme.mono(13, weight: .semibold))
@@ -110,34 +111,66 @@ public struct MenuBarContentView: View {
     }
 }
 
-/// One plan's number: the 5-hour percent left, with a coral mark when this is
-/// the signed-in plan. The mark leads the number so the marked figure reads as
-/// one unit rather than a number with trailing punctuation.
-struct GlanceNumber: View {
-    let pctLeft: Int?
-    let marked: Bool
+/// The signed-in plan as the bar reads it: the account letter, and the
+/// tightest window's percent left with the tag that names that window. A plan
+/// whose numbers cannot be trusted keeps its letter and loses the number, so
+/// the bar still says which account is signed in without vouching for it.
+public struct GlanceReadout: Equatable {
+    /// "P" or "W", or "?" when the subscription id does not say which.
+    public let letter: String
+    /// Nil when the plan is unreadable: no window with a reading, or a reading
+    /// older than the card's freshness limit. A `stale` flag alone keeps the
+    /// number. The daemon sets it whenever it serves its last good reading (a
+    /// rate-limit cooldown, a dead token), and `readAt` stays the time of that
+    /// read, so a plan that cannot recover still ages into the dash.
+    public let pctLeft: Int?
+    /// "5h", "wk", "fable" or "$". Nil exactly when `pctLeft` is.
+    public let tag: String?
+
+    public init(sub: Subscription, now: Date) {
+        letter = sub.accountLetter ?? "?"
+        let fresh = sub.agedReading(now: now) == nil
+        if fresh, let window = sub.tightest, let pct = window.pctLeft {
+            pctLeft = pct
+            tag = Fmt.glanceTag(kind: window.kind)
+        } else {
+            pctLeft = nil
+            tag = nil
+        }
+    }
+}
+
+/// `P 61 5h`. Only the number takes a pressure color. The letter and the tag
+/// are labels, so they stay in the bar's ink and step back from the number;
+/// which account is signed in is never a reason to color anything.
+struct GlanceReadoutView: View {
+    let readout: GlanceReadout
     let ink: Color
 
     var body: some View {
-        HStack(spacing: 3) {
-            if marked {
-                Circle()
-                    .fill(Theme.claudeCoral)
-                    .frame(width: 4, height: 4)
-                    .accessibilityLabel("signed in")
-            }
-            Text(text)
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(readout.letter)
                 .font(Theme.mono(12, weight: .semibold))
-                .foregroundStyle(MenuBarContentView.numberColor(pctLeft: pctLeft, ink: ink))
-                .monospacedDigit()
-                .fixedSize()
+                .foregroundStyle(ink.opacity(0.6))
+            if let pct = readout.pctLeft, let tag = readout.tag {
+                // The bare number, "61". No "%": the tag already says what the
+                // number counts, and the glyph costs width on every glance.
+                Text(Fmt.glancePercent(pctLeft: pct))
+                    .font(Theme.mono(12, weight: .semibold))
+                    .foregroundStyle(MenuBarContentView.numberColor(pctLeft: pct, ink: ink))
+                    .monospacedDigit()
+                Text(tag)
+                    .font(Theme.mono(10, weight: .medium))
+                    .foregroundStyle(ink.opacity(0.6))
+            } else {
+                // A dash, not a zero and not the last number: absence must not
+                // read as healthy, and it must not read as spent either.
+                Text("–")
+                    .font(Theme.mono(12, weight: .semibold))
+                    .foregroundStyle(ink.opacity(0.35))
+                    .accessibilityLabel("no reading")
+            }
         }
-    }
-
-    /// The bare number, "74". No "%": with only numbers on the bar there is
-    /// nothing else it could mean, and the glyph costs width on every glance.
-    /// A window with no reading is a dash, not a zero.
-    private var text: String {
-        pctLeft != nil ? Fmt.glancePercent(pctLeft: pctLeft) : "–"
+        .fixedSize()
     }
 }
