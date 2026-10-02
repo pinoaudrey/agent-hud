@@ -44,6 +44,10 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <!-- Menu-bar-only: no Dock icon, no app menu. -->
     <key>LSUIElement</key><true/>
+    <!-- Shown in the one-time Automation prompt the first time a NEEDS YOU
+         row brings a Terminal tab forward. Without it macOS refuses the
+         Apple Event and never asks. -->
+    <key>NSAppleEventsUsageDescription</key><string>Agent HUD selects the Terminal tab of the session you click.</string>
     <!-- Where the Python daemon (main.py) lives, so the app can start
          it even when installed outside the repo (e.g. /Applications). -->
     <key>AHDaemonRoot</key><string>${REPO_ROOT}</string>

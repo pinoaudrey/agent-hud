@@ -1,7 +1,7 @@
 import Foundation
 
 // Codable structs mirroring the daemon contract served at
-// http://127.0.0.1:8737/v1/hud (version 2). Field names match the JSON
+// http://127.0.0.1:8737/v1/hud (version 4). Field names match the JSON
 // exactly; do not rename them. Anything the daemon may omit or send as null
 // is modeled as an Optional so decoding never throws on a sparse snapshot.
 
@@ -174,13 +174,31 @@ public struct Agent: Codable, Equatable, Identifiable {
     public let action: String?
     public let sinceSeconds: Int?
     public let subscriptionID: String?
+    // v4. Every one is optional so a v3 snapshot, which has none of them,
+    // still decodes; a v3 agent simply never shows in NEEDS YOU.
+    public let sessionID: String?
+    /// What to call the session: the name it was given, its AI title, the last
+    /// prompt, or the directory, in that order of preference.
+    public let title: String?
+    public let surface: String?      // "terminal" | "desktop"; absent reads as terminal
+    /// The controlling terminal as `ps` names it ("ttys012"), which is how a
+    /// row finds the Terminal tab to bring forward.
+    public let tty: String?
+    /// The Desktop app's own id for a desktop session ("local_…").
+    public let hostSessionID: String?
+    /// When `state` last changed: when a waiting session started to wait, or
+    /// when an idle one finished.
+    public let stateSince: Date?
 
     public var id: Int { pid }
 
     enum CodingKeys: String, CodingKey {
-        case pid, tool, project, cwd, state, action
+        case pid, tool, project, cwd, state, action, title, surface, tty
         case sinceSeconds = "since_seconds"
         case subscriptionID = "subscription_id"
+        case sessionID = "session_id"
+        case hostSessionID = "host_session_id"
+        case stateSince = "state_since"
     }
 
     public init(
@@ -191,7 +209,13 @@ public struct Agent: Codable, Equatable, Identifiable {
         state: String,
         action: String?,
         sinceSeconds: Int?,
-        subscriptionID: String?
+        subscriptionID: String?,
+        sessionID: String? = nil,
+        title: String? = nil,
+        surface: String? = nil,
+        tty: String? = nil,
+        hostSessionID: String? = nil,
+        stateSince: Date? = nil
     ) {
         self.pid = pid
         self.tool = tool
@@ -201,6 +225,12 @@ public struct Agent: Codable, Equatable, Identifiable {
         self.action = action
         self.sinceSeconds = sinceSeconds
         self.subscriptionID = subscriptionID
+        self.sessionID = sessionID
+        self.title = title
+        self.surface = surface
+        self.tty = tty
+        self.hostSessionID = hostSessionID
+        self.stateSince = stateSince
     }
 }
 

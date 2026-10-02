@@ -68,15 +68,48 @@ extension HUDSnapshot {
             activeAgents: 1
         )
 
+        // Two sessions blocked on you (one in a Terminal tab, one in the Desktop
+        // app), two finished within the last two hours, and one that finished
+        // long enough ago that NEEDS YOU leaves it out.
         let agents = [
             Agent(pid: 4821, tool: "claude", project: "prototype-ehr",
                   cwd: "/Users/j/prototype-ehr", state: "waiting",
-                  action: "waiting on approval to run tests", sinceSeconds: 72,
-                  subscriptionID: "claude-team"),
+                  action: "permission to run tests", sinceSeconds: 40 * 60,
+                  subscriptionID: "claude-team", sessionID: "4b5d8bef",
+                  title: "Fix the intake form validation", surface: "terminal",
+                  tty: "ttys004", stateSince: at(-14)),
+            Agent(pid: 6120, tool: "claude", project: "web-app",
+                  cwd: "/Users/j/web-app", state: "waiting",
+                  action: "input needed", sinceSeconds: 95 * 60,
+                  subscriptionID: "claude-max", sessionID: "8d466826",
+                  title: "Hold intake sections until check-in", surface: "desktop",
+                  hostSessionID: "local_24dad477-a055-41a0-83fb-295c5b937828",
+                  stateSince: at(-3)),
             Agent(pid: 4822, tool: "claude", project: "web-app",
                   cwd: "/Users/j/web-app", state: "working",
-                  action: "editing MeterRow.swift", sinceSeconds: 8 * 60 + 12,
-                  subscriptionID: "claude-team"),
+                  action: nil, sinceSeconds: 8 * 60 + 12,
+                  subscriptionID: "claude-team", sessionID: "6fbc7a17",
+                  title: "Add HPI and ROS editors on the canvas note", surface: "terminal",
+                  tty: "ttys002", stateSince: at(-1)),
+            Agent(pid: 6544, tool: "claude", project: "docs",
+                  cwd: "/Users/j/docs", state: "idle",
+                  action: nil, sinceSeconds: 3 * 3600,
+                  subscriptionID: "claude-max", sessionID: "45bdacb7",
+                  title: "Draft the onboarding call follow-up", surface: "desktop",
+                  hostSessionID: "local_e9459081-1ce1-43f0-a488-93d99d6512ad",
+                  stateSince: at(-12)),
+            Agent(pid: 7310, tool: "claude", project: "agent-hud",
+                  cwd: "/Users/j/agent-hud", state: "idle",
+                  action: nil, sinceSeconds: 2 * 3600,
+                  subscriptionID: "claude-max", sessionID: "c567cbb1",
+                  title: "Fix pr-watch false failure on superseded runs", surface: "terminal",
+                  tty: "ttys007", stateSince: at(-47)),
+            Agent(pid: 7402, tool: "claude", project: "agents",
+                  cwd: "/Users/j/.agents", state: "idle",
+                  action: nil, sinceSeconds: 9 * 3600,
+                  subscriptionID: "claude-max", sessionID: "2d858f30",
+                  title: "Seat mod charter guards", surface: "terminal",
+                  tty: "ttys009", stateSince: at(-5 * 60)),
             Agent(pid: 5140, tool: "codex", project: "agent-hud",
                   cwd: "/Users/j/agent-hud", state: "working",
                   action: "running swift build", sinceSeconds: 44,
@@ -116,7 +149,7 @@ extension HUDSnapshot {
         )
 
         return HUDSnapshot(
-            version: 3,
+            version: 4,
             generatedAt: previewNow,
             subscriptions: [personal, team, codex],
             agents: agents,

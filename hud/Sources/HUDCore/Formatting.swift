@@ -84,6 +84,18 @@ public enum Fmt {
         return "\(hours / 24)d ago"
     }
 
+    /// How long a session has waited on you, for a NEEDS YOU row: "<1m",
+    /// "12m", "1h 05m", "2d 3h". Minutes at the finest, because the card only
+    /// redraws every half minute and a seconds count would read as frozen.
+    public static func waited(since date: Date, now: Date = Date()) -> String {
+        let minutes = max(0, Int(now.timeIntervalSince(date))) / 60
+        if minutes < 1 { return "<1m" }
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h \(String(format: "%02d", minutes % 60))m" }
+        return "\(hours / 24)d \(hours % 24)h"
+    }
+
     /// Dollars to the cent, for the per-subscription lines where the figures are
     /// being compared against each other and rounding hides the difference.
     public static func usdExact(_ amount: Double) -> String {
