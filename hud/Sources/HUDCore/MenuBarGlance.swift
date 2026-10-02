@@ -7,11 +7,11 @@ import SwiftUI
 /// because that is the only budget the work in front of you draws on. It reads
 /// as a letter, a number and a tag, `P 61 5h`: which account (P for a plan you
 /// hold yourself, W for a seat at work), the percent left in that plan's
-/// tightest window, and which window that is. The tag is there because the
-/// tightest window moves as limits drain and reset, and a bare number would
-/// not say whether it was the 5-hour session, the week, Fable, or an Enterprise
-/// spend cap. Every other plan, and every other window, reads on the card a
-/// click away.
+/// 5-hour session window, and the tag that names it. The number is always the
+/// 5-hour window, so it means the same thing at every glance. A plan with no
+/// 5-hour window (an Enterprise seat, whose one limit is the spend cap) shows
+/// its tightest window instead, and the tag says which. Every other plan, and
+/// every other window, reads on the card a click away.
 ///
 /// Codex is deliberately absent. The bar answers "can I keep working right
 /// now", and with no switcher and no session limit, Codex never changes that
@@ -111,8 +111,9 @@ public struct MenuBarContentView: View {
     }
 }
 
-/// The signed-in plan as the bar reads it: the account letter, and the
-/// tightest window's percent left with the tag that names that window. A plan
+/// The signed-in plan as the bar reads it: the account letter, and the 5-hour
+/// window's percent left (or the tightest window's, for a plan with no 5-hour
+/// window) with the tag that names that window. A plan
 /// whose numbers cannot be trusted keeps its letter and loses the number, so
 /// the bar still says which account is signed in without vouching for it.
 public struct GlanceReadout: Equatable {
@@ -130,7 +131,7 @@ public struct GlanceReadout: Equatable {
     public init(sub: Subscription, now: Date) {
         letter = sub.accountLetter ?? "?"
         let fresh = sub.agedReading(now: now) == nil
-        if fresh, let window = sub.tightest, let pct = window.pctLeft {
+        if fresh, let window = sub.sessionWindow ?? sub.tightest, let pct = window.pctLeft {
             pctLeft = pct
             tag = Fmt.glanceTag(kind: window.kind)
         } else {
