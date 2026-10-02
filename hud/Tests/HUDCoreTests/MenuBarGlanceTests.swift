@@ -161,17 +161,34 @@ final class MenuBarGlanceTests: XCTestCase {
         }
     }
 
-    func testAStaleReadingIsADashNotTheLastNumber() {
-        let flagged = sub("claude-team", active: true, stale: "rate limited, retry 4m",
-                          windows: [window("session_5h", 70)])
+    func testAReadingPastTheFreshnessLimitIsADashNotTheLastNumber() {
         let old = sub("claude-team", active: true,
                       readAt: now.addingTimeInterval(-(Subscription.freshnessLimit + 60)),
                       windows: [window("session_5h", 70)])
         let fresh = sub("claude-team", active: true, readAt: now.addingTimeInterval(-120),
                         windows: [window("session_5h", 70)])
-        XCTAssertNil(GlanceReadout(sub: flagged, now: now).pctLeft)
         XCTAssertNil(GlanceReadout(sub: old, now: now).pctLeft)
         XCTAssertEqual(GlanceReadout(sub: fresh, now: now).pctLeft, 70)
+    }
+
+    func testAStaleFlagAloneKeepsTheLastNumber() {
+        // A rate-limit cooldown serves the last good reading with a reason
+        // attached. That number is minutes old and still true enough to show.
+        let cooling = sub("claude-team", active: true, readAt: now.addingTimeInterval(-120),
+                          stale: "rate limited, retry 4m", windows: [window("session_5h", 70)])
+        let readout = GlanceReadout(sub: cooling, now: now)
+        XCTAssertEqual(readout.pctLeft, 70)
+        XCTAssertEqual(readout.tag, "5h")
+    }
+
+    func testADeadTokenAgesIntoTheDash() {
+        // The daemon keeps `read_at` at the last good read while it serves the
+        // cached numbers, so a plan that never recovers stops vouching for them.
+        let signedOut = sub("claude-team", active: true,
+                            readAt: now.addingTimeInterval(-(Subscription.freshnessLimit + 60)),
+                            stale: "signed out, run claude auth login",
+                            windows: [window("session_5h", 70)])
+        XCTAssertNil(GlanceReadout(sub: signedOut, now: now).pctLeft)
     }
 
     // MARK: - The number's color

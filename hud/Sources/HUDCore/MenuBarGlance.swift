@@ -118,16 +118,19 @@ public struct MenuBarContentView: View {
 public struct GlanceReadout: Equatable {
     /// "P" or "W", or "?" when the subscription id does not say which.
     public let letter: String
-    /// Nil when the plan is unreadable: no window with a reading, a reading the
-    /// daemon flags as stale, or one older than the card's freshness limit.
+    /// Nil when the plan is unreadable: no window with a reading, or a reading
+    /// older than the card's freshness limit. A `stale` flag alone keeps the
+    /// number. The daemon sets it whenever it serves its last good reading (a
+    /// rate-limit cooldown, a dead token), and `readAt` stays the time of that
+    /// read, so a plan that cannot recover still ages into the dash.
     public let pctLeft: Int?
     /// "5h", "wk", "fable" or "$". Nil exactly when `pctLeft` is.
     public let tag: String?
 
     public init(sub: Subscription, now: Date) {
         letter = sub.accountLetter ?? "?"
-        let trusted = sub.stale == nil && sub.agedReading(now: now) == nil
-        if trusted, let window = sub.tightest, let pct = window.pctLeft {
+        let fresh = sub.agedReading(now: now) == nil
+        if fresh, let window = sub.tightest, let pct = window.pctLeft {
             pctLeft = pct
             tag = Fmt.glanceTag(kind: window.kind)
         } else {

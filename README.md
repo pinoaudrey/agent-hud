@@ -141,9 +141,11 @@ never changes "can I keep working right now" from one minute to the next.
 
 The number is in the bar's own ink while the plan is healthy, and takes the
 severity colour under 25% left, the same threshold at which a pod lights. Which
-account is signed in never colours anything. A plan with no reading, a reading
-the daemon flags as stale, or one older than ten minutes keeps its letter and
-shows a dim dash in place of the number: absence must never read as healthy.
+account is signed in never colours anything. A plan with no reading, or with a
+reading older than ten minutes, keeps its letter and shows a dim dash in place
+of the number: absence must never read as healthy. A rate-limit cooldown keeps
+the last number, because the daemon dates a cached reading from its last good
+read, so a plan that cannot recover still turns into the dash.
 With no Claude plan signed in, or the daemon offline, the bar shows two dim
 dashes.
 
