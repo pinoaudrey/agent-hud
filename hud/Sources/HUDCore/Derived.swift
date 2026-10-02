@@ -31,13 +31,25 @@ extension Subscription {
         windows.first { $0.isFable }
     }
 
-    /// The single window the menu-bar glance headlines: the 5h session, i.e.
-    /// the immediate "can I work right now" budget. Falls back to the tightest
-    /// window, then the first, so every subscription resolves to one number.
-    /// A dry weekly/Fable limit is not surfaced here by design; it reads in the
-    /// popover a click away, where every window is shown.
-    public var glanceWindow: Window? {
-        sessionWindow ?? tightest ?? windows.first
+    /// Which of your accounts this is, as one letter for the menu bar: "P" for
+    /// a plan you hold yourself, "W" for a seat your employer holds. Nil when
+    /// the id does not say, which the bar shows as "?" rather than guessing.
+    ///
+    /// Read from the id because the daemon names a subscription after its
+    /// organization type (`claude-max`, `claude-enterprise`), and a disambiguated
+    /// id only appends to that (`claude-team-carepilot`). A bare `claude` is an
+    /// organization with no plan word that is named after an email address,
+    /// which is what an individual account looks like.
+    public var accountLetter: String? {
+        guard provider == "claude" else { return nil }
+        if id == "claude" { return "P" }
+        guard id.hasPrefix("claude-") else { return nil }
+        let plan = id.dropFirst("claude-".count).split(separator: "-").first ?? ""
+        switch plan {
+        case "max", "pro", "free":     return "P"
+        case "team", "enterprise":     return "W"
+        default:                       return nil
+        }
     }
 
     /// How old a reading is allowed to be before the pod says so. Claude is

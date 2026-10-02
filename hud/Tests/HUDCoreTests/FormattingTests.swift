@@ -52,6 +52,16 @@ final class FormattingTests: XCTestCase {
         XCTAssertEqual(Fmt.windowLabel(kind: "weekly_7d"), "7d")
         XCTAssertEqual(Fmt.windowLabel(kind: "weekly_fable"), "F")
         XCTAssertEqual(Fmt.windowLabel(kind: "weekly"), "7d")
+        XCTAssertEqual(Fmt.windowLabel(kind: "spend"), "$")
+        XCTAssertEqual(Fmt.windowName(kind: "spend"), "spend")
+    }
+
+    func testGlanceTags() {
+        XCTAssertEqual(Fmt.glanceTag(kind: "session_5h"), "5h")
+        XCTAssertEqual(Fmt.glanceTag(kind: "weekly_7d"), "wk")
+        XCTAssertEqual(Fmt.glanceTag(kind: "weekly"), "wk")
+        XCTAssertEqual(Fmt.glanceTag(kind: "weekly_fable"), "fable")
+        XCTAssertEqual(Fmt.glanceTag(kind: "spend"), "$")
     }
 
     // MARK: Value formatting

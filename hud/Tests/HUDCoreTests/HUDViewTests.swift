@@ -18,40 +18,10 @@ final class HUDViewTests: XCTestCase {
     private let session = Window(kind: "session_5h", pctLeft: 40, resetsAt: nil, pace: nil)
     private let weekly = Window(kind: "weekly_7d", pctLeft: 61, resetsAt: nil, pace: nil)
     private let fable = Window(kind: "weekly_fable", pctLeft: 12, resetsAt: nil, pace: nil)
-    private let codexWeekly = Window(kind: "weekly", pctLeft: 43, resetsAt: nil, pace: nil)
-
-    func testGlanceWindowPrefersTheSessionOverTighterWeeklies() {
-        // The bar's number is the immediate "can I work right now" budget, so
-        // a drier weekly must not displace the session window.
-        XCTAssertEqual(sub(windows: [session, weekly, fable]).glanceWindow?.kind, "session_5h")
-    }
-
-    func testGlanceWindowFallsBackWhenThereIsNoSession() {
-        XCTAssertEqual(sub(windows: [codexWeekly]).glanceWindow?.kind, "weekly")
-    }
 
     func testWeekly7dNeverReturnsFable() {
         XCTAssertEqual(sub(windows: [session, fable]).weekly7dWindow?.kind, nil)
         XCTAssertEqual(sub(windows: [session, fable, weekly]).weekly7dWindow?.kind, "weekly_7d")
-    }
-
-    // MARK: - Glance window derivation
-
-    func testGlanceWindowPrefersSession() {
-        let s = sub(windows: [weekly, session, fable])
-        XCTAssertEqual(s.glanceWindow?.kind, "session_5h")
-    }
-
-    func testGlanceWindowFallsBackToTightestThenFirst() {
-        // No session window: fall back to the sub's reported tightest.
-        let noSession = Subscription(
-            id: "s", provider: "claude", label: "S",
-            windows: [weekly, fable], tightest: fable, stale: nil, activeAgents: 0)
-        XCTAssertEqual(noSession.glanceWindow?.kind, "weekly_fable")
-
-        // No session and no tightest: fall back to the first window.
-        let bare = sub(windows: [weekly, fable])
-        XCTAssertEqual(bare.glanceWindow?.kind, "weekly_7d")
     }
 
     // MARK: - Agent state

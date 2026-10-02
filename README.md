@@ -122,29 +122,41 @@ which ones wait on you and what they wait for.
 
 ## The menu bar
 
-One concentric ring cluster per subscription, and a single amber dot when the
-agent setup has problems (nothing at all when it is clean, or when the daemon
-could not check it).
+One readout for the signed-in Claude plan, and a single amber dot when the agent
+setup has problems (nothing at all when it is clean, or when the daemon could not
+check it).
+
+The readout is `P 61 5h`: a letter for the account, the percent left in that
+plan's tightest window, and a tag that names the window. `P` is a plan you hold
+yourself (Max, Pro, or an individual org) and `W` is a seat at work (Team or
+Enterprise); the letter comes from the plan word in the subscription id, and an
+id that names no plan shows `?`. The tag is `5h`, `wk`, `fable`, or `$` for an
+Enterprise spend cap. It is there because the tightest window moves as limits
+drain and reset, and a bare number would not say which window it was.
+
+The bar speaks for one plan because that is the one a bare `claude` spends right
+now. Every other plan, and every window of each plan, reads on the card a click
+away. Codex stays off the bar: it has no session limit and no switcher, so it
+never changes "can I keep working right now" from one minute to the next.
+
+The number is in the bar's own ink while the plan is healthy, and takes the
+severity colour under 25% left, the same threshold at which a pod lights. Which
+account is signed in never colours anything. A plan with no reading, a reading
+the daemon flags as stale, or one older than ten minutes keeps its letter and
+shows a dim dash in place of the number: absence must never read as healthy.
+With no Claude plan signed in, or the daemon offline, the bar shows two dim
+dashes.
 
 Deliberately no countdown. The only one that fits in a status item is the soonest
 reset across every plan, which is a single number that does not say which plan it
-belongs to. The card, a click away, gives each plan its own reset and its own
-5-hour clock.
-
-Each ring is a fuel gauge for one window: the arc is how much is **left**, so a
-healthy plan is a full ring and a burnt one is nearly bare, and it is coloured
-green, amber or red by severity. A plan with three limits draws three rings; a
-plan with one draws one. A fully spent limit has no arc to carry its colour, so
-its track goes solid red instead: empty is the state most worth seeing, and it
-must not render as an absence.
+belongs to. The card gives each plan its own resets.
 
 That colour is why the status item is **not** a template image, which is the
 conventional choice. A template throws its pixels away and takes AppKit's tint,
 guaranteeing contrast over any wallpaper, but it would also flatten green, amber
-and red into one shade and leave a ring that says how full it is without saying
-whether that is fine. So the glance draws in real colour and resolves everything
-that is not severity against the menu bar's own appearance instead, re-rendering
-whenever that appearance changes.
+and red into one shade. So the glance draws in real colour and resolves
+everything that is not severity against the menu bar's own appearance instead,
+re-rendering whenever that appearance changes.
 
 ## Setup health
 

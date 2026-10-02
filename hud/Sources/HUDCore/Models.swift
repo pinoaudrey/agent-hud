@@ -130,7 +130,7 @@ public struct Subscription: Codable, Equatable, Identifiable {
 }
 
 public struct Window: Codable, Equatable {
-    public let kind: String          // session_5h | weekly_7d | weekly_fable | weekly
+    public let kind: String          // session_5h | weekly_7d | weekly_fable | weekly | spend
     public let pctLeft: Int?
     public let resetsAt: Date?
     public let pace: Pace?
