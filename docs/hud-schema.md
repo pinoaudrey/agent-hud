@@ -1,4 +1,4 @@
-# HUD snapshot schema (v3)
+# HUD snapshot schema (v4)
 
 The `agenthud serve` daemon maintains one JSON snapshot of subscription usage and
 live agent activity. It is written atomically to `~/.cache/agenthud/hud.json` on
@@ -8,13 +8,15 @@ renamed.
 
 **v2** added the `setup` block, and later `subscriptions[].read_at`,
 `subscriptions[].trees`, and `subscriptions[].active`. **v3** added the `swap`
-block. Everything from v1 is unchanged, and every field added since is optional
+block. **v4** added `agents[].session_id`, `title`, `surface`, `tty`, and
+`state_since`, and started to list Claude Desktop app sessions in `agents[]`.
+Everything from v1 is unchanged, and every field added since is optional
 on the reading side, so an older snapshot still decodes.
 
 ## Serving it
 
 - `GET /v1/hud` returns the snapshot as `application/json`.
-- `GET /v1/health` returns `{"ok": true, "version": 2}`.
+- `GET /v1/health` returns `{"ok": true, "version": 4}`.
 - Any other path returns `404`.
 - The server binds loopback only (default `127.0.0.1:8737`). CORS is permissive
   (`Access-Control-Allow-Origin: *`) because only localhost can reach it anyway.
@@ -34,7 +36,8 @@ Run it with `agenthud serve` (or `agenthud --serve`), optionally with `--host` a
   and shared with every live Claude Code session. This daemon is meant to be the
   single resident poller.
 - Live activity (running agents and their state) polls every 2 seconds, since it
-  is cheap on-disk reads plus one `ps`.
+  is cheap on-disk reads plus two `ps` calls. A session's title comes from a
+  bounded tail of its transcript, reread only when the file changes.
 - Setup health polls every 60 seconds. It shells out to `~/.agents/bin/check-setup.sh`,
   which is well under a second but not free, and drift arrives at the speed of a
   person editing a config file.
@@ -48,7 +51,7 @@ Run it with `agenthud serve` (or `agenthud --serve`), optionally with `--host` a
 
 ```json
 {
-  "version": 2,
+  "version": 4,
   "generated_at": "2026-07-21T18:04:05.123456+00:00",
   "subscriptions": [ ... ],
   "agents": [ ... ],
@@ -61,10 +64,10 @@ Run it with `agenthud serve` (or `agenthud --serve`), optionally with `--host` a
 
 | field | type | meaning |
 |---|---|---|
-| `version` | int | Schema version. `2` for this contract. |
+| `version` | int | Schema version. `4` for this contract. |
 | `generated_at` | ISO8601 string with offset | When this snapshot was built (UTC). |
 | `subscriptions` | array | One entry per Claude account plus Codex. OpenCode is BYOK, not a subscription, so it never appears here. |
-| `agents` | array | Every running claude / codex / opencode terminal session detected right now. |
+| `agents` | array | Every running claude / codex / opencode session detected right now: terminal sessions, plus Claude Desktop app sessions. |
 | `value` | object or null | Dollar value delivered vs. subscription cost. `null` when the pricing collector is unavailable. |
 | `soonest_reset` | object or null | The single earliest-resetting window across all subscriptions, or `null` when no window reports a reset time. |
 | `setup` | object or null | Whether the shared agent setup in `~/.agents` is healthy, verbatim from `check-setup.sh --json`. `null` means the question could not be asked — **never that the setup is fine**. |
@@ -131,7 +134,7 @@ off the readout at the moment its quota is most worth seeing.
 
 | field | type | meaning |
 |---|---|---|
-| `kind` | string | The window type. Claude reports `session_5h` (the 5-hour session limit), `weekly_7d` (the 7-day limit), and `weekly_fable` (the model-scoped weekly limit, Fable on Max/Team). Codex reports `session_5h` and `weekly`. |
+| `kind` | string | The window type. Claude reports `session_5h` (the 5-hour session limit), `weekly_7d` (the 7-day limit), `weekly_fable` (the model-scoped weekly limit, Fable on Max/Team), and `spend` (the Enterprise monthly spend cap, which has no fixed duration and so never carries `pace`). Codex reports `session_5h` and `weekly`. |
 | `pct_left` | int 0-100, or null | Percent of the quota still available (`100 - utilization`). `null` when the subscription doesn't report a percentage for this window. |
 | `resets_at` | ISO8601 string, or null | When the window rolls over. `null` when unknown. |
 | `pace` | object or null | A linear burn projection, computed only for the subscription's tightest window and only when computable (needs a reset time and some usage). `null` on every other window. |
@@ -152,20 +155,39 @@ dry (safe), negative means you would run out first at the current pace.
   "state": "working",
   "action": "editing auth.py",
   "since_seconds": 720,
-  "subscription_id": "claude-team"
+  "subscription_id": "claude-team",
+  "session_id": "6fbc7a17-095c-418c-af8e-775f82eb083d",
+  "title": "Fix the login redirect",
+  "surface": "terminal",
+  "tty": "ttys012",
+  "state_since": "2026-10-02T18:50:01.780000+00:00"
 }
 ```
 
+Claude sessions come from the record Claude Code writes for each live session,
+`<tree>/sessions/<pid>.json`, in every config tree (the default `~/.claude`,
+sibling `~/.claude-<name>` trees, and claude-swap profiles). A record counts only
+while its pid is alive and the process start time matches the record's
+`procStart`, so a record left behind by a dead process, or a pid the system has
+since reused, never shows as a session. Headless SDK runs (`entrypoint:
+"sdk-cli"`) are left out, because they never wait on a person. Codex and
+opencode still come from a `ps` scan of processes with a terminal.
+
 | field | type | meaning |
 |---|---|---|
-| `pid` | int | Process id of the terminal agent session. |
+| `pid` | int | Process id of the agent session. |
 | `tool` | `"claude"` \| `"codex"` \| `"opencode"` | Which CLI this is. |
 | `project` | string | Basename of the working directory. |
 | `cwd` | string | Full working directory path. |
-| `state` | `"working"` \| `"waiting"` \| `"idle"` | Live status. `waiting` means it is blocked on the user (e.g. a permission prompt). An unknown status is reported as `idle`. |
-| `action` | string or null | The current action text (e.g. `editing auth.py`) when known, else `null`. |
+| `state` | `"working"` \| `"waiting"` \| `"idle"` | Live status. `waiting` means it is blocked on the user (e.g. a permission prompt or a question). For Claude it is the session record's own `status`. An unknown status is reported as `idle`. |
+| `action` | string or null | The current action text (e.g. `editing auth.py`) when known, else `null`. For a `waiting` Claude session it is what the session waits for (e.g. `input needed`). |
 | `since_seconds` | int or null | Approximate session uptime in seconds, or `null` when not derivable. |
 | `subscription_id` | string or null | The subscription this agent spends against, when determinable. Codex agents are always `codex`; a Claude agent is matched to the config tree holding its per-pid session file, and from there to that tree's subscription; opencode and unresolved agents are `null`. |
+| `session_id` | string or null | The transcript id the session writes. `null` when the tool does not expose one. Added in v4. |
+| `title` | string or null | What to call the session. For Claude, best source first: the name the person gave it (or the name the Desktop app gave it), the newest AI title in the transcript, the newest prompt typed, then the working directory's basename. A name Claude Code made up from the directory is skipped. `null` for tools with no title source. Added in v4. |
+| `surface` | `"terminal"` \| `"desktop"` | Where the session lives. `desktop` is the Claude Desktop app, which has no terminal to raise; everything else is `terminal`. Absent before v4; decode it as `terminal`. |
+| `tty` | string or null | The session's controlling terminal as `ps` names it (`ttys012`), which is how a reader finds the Terminal tab to bring forward. `null` for `desktop` sessions and when unknown. Added in v4. |
+| `state_since` | ISO8601 string, or null | When `state` last changed: for a `waiting` session, when it started to wait; for an `idle` one, when it finished. A timestamp rather than a running count, so the snapshot does not change every second while nothing happens. `null` when unknown (every non-Claude agent today). Added in v4. |
 
 ## `value`
 

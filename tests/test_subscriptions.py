@@ -20,6 +20,7 @@ from subscriptions import (
     ClaudeProfile,
     claude_profiles,
     claude_subscriptions,
+    config_trees,
     subscription_index,
 )
 
@@ -205,6 +206,14 @@ def test_both_subscriptions_survive_with_no_sibling_tree(tmp_path: Path):
         ("claude-max", "Claude Max"),
         ("claude-team", "Claude Team"),
     ]
+
+
+def test_config_trees_are_the_profile_dirs_without_the_account_lookup(tmp_path: Path):
+    # the activity poll reads live session records from every tree, including
+    # cswap's profiles, so it needs the same list the profiles are built from
+    home = _swapped_machine(tmp_path)
+    assert config_trees(home) == [p.config_dir for p in claude_profiles(home=home)]
+    assert len(config_trees(home)) == 3
 
 
 def test_the_swapped_out_account_still_reports(tmp_path: Path):
