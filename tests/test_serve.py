@@ -70,7 +70,9 @@ def _fake_usages() -> list[ToolUsage]:
 def _fake_agents() -> list[RunningAgent]:
     return [
         RunningAgent(tool="claude", pid=1, tty="ttys001", elapsed="4h 12m",
-                     cwd="/tmp/web-app", state="working", label="editing auth.py"),
+                     cwd="/tmp/web-app", state="working", label="editing auth.py",
+                     session_id="sess-1", title="Fix the login redirect",
+                     state_since=datetime(2026, 10, 2, 16, 17, 44, tzinfo=timezone.utc)),
         RunningAgent(tool="codex", pid=2, tty="ttys002", elapsed="9m",
                      cwd="/tmp/api", state="unknown"),
     ]
@@ -81,7 +83,7 @@ def _fake_agents() -> list[RunningAgent]:
 
 def test_snapshot_has_frozen_top_level_shape():
     snap = build_snapshot(_fake_usages(), _now(), _fake_agents())
-    assert snap["version"] == 3
+    assert snap["version"] == 4
     # generated_at is ISO8601 with an offset
     assert datetime.fromisoformat(snap["generated_at"]).tzinfo is not None
     assert set(snap) == {"version", "generated_at", "subscriptions", "agents",
@@ -160,6 +162,27 @@ def test_agents_are_mapped_and_state_normalised():
     assert agents[2]["state"] == "idle"  # "unknown" normalises to idle
     assert agents[2]["action"] is None
     assert agents[2]["subscription_id"] == "codex"  # codex agents are always codex
+
+
+def test_agents_carry_the_needs_you_fields():
+    desktop = RunningAgent(tool="claude", pid=3, tty="", elapsed="1h 2m", cwd="/tmp/docs",
+                           state="waiting", label="input needed", session_id="sess-3",
+                           title="Intake handoff", surface="desktop", host_session_id="local_e945",
+                           state_since=datetime(2026, 10, 2, 18, 0, tzinfo=timezone.utc))
+    snap = build_snapshot([], _now(), [*_fake_agents(), desktop])
+    agents = {a["pid"]: a for a in snap["agents"]}
+    assert set(agents[1]) == {"pid", "tool", "project", "cwd", "state", "action",
+                              "since_seconds", "subscription_id", "session_id", "title",
+                              "surface", "tty", "host_session_id", "state_since"}
+    assert agents[1]["title"] == "Fix the login redirect"
+    assert (agents[1]["surface"], agents[1]["tty"]) == ("terminal", "ttys001")
+    assert agents[1]["state_since"] == "2026-10-02T16:17:44+00:00"
+    assert (agents[3]["surface"], agents[3]["tty"]) == ("desktop", None)
+    assert agents[3]["host_session_id"] == "local_e945" and agents[1]["host_session_id"] is None
+    assert agents[3]["state"] == "waiting" and agents[3]["action"] == "input needed"
+    # the codex agent has no title or transcript id to give: null, never ""
+    assert agents[2]["title"] is None and agents[2]["session_id"] is None
+    assert agents[2]["state_since"] is None
 
 
 def test_active_agents_counted_per_subscription(tmp_path: Path):
@@ -558,7 +581,7 @@ def test_hud_endpoint_serves_the_snapshot(running_server: str):
         assert resp.headers["Content-Type"] == "application/json"
         assert resp.headers["Access-Control-Allow-Origin"] == "*"
         snap = json.loads(resp.read().decode())
-    assert snap["version"] == 3
+    assert snap["version"] == 4
     assert [s["provider"] for s in snap["subscriptions"]] == ["claude", "codex"]
     assert len(snap["agents"]) == 2
 
@@ -566,7 +589,7 @@ def test_hud_endpoint_serves_the_snapshot(running_server: str):
 def test_health_endpoint(running_server: str):
     with urllib.request.urlopen(f"{running_server}/v1/health", timeout=5) as resp:
         assert resp.status == 200
-        assert json.loads(resp.read().decode()) == {"ok": True, "version": 3}
+        assert json.loads(resp.read().decode()) == {"ok": True, "version": 4}
 
 
 def test_unknown_path_404s(running_server: str):
@@ -602,7 +625,7 @@ def test_non_loopback_bind_allowed_with_env_override(monkeypatch: pytest.MonkeyP
 def test_snapshot_carries_the_setup_block():
     setup = {"version": 1, "generated_at": "x", "problems": 2, "sections": []}
     snap = build_snapshot(_fake_usages(), _now(), [], setup=setup)
-    assert snap["version"] == 3
+    assert snap["version"] == 4
     assert snap["setup"] == setup
 
 

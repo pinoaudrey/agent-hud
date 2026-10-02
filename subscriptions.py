@@ -229,6 +229,13 @@ def claude_profiles(home: Path | None = None) -> list[ClaudeProfile]:
     return profiles
 
 
+def config_trees(home: Path | None = None) -> list[Path]:
+    """Every Claude config tree on this machine, without the account lookup
+    `claude_profiles` does. The activity poll runs every couple of seconds and
+    only needs to know where each tree's live session records are."""
+    return [config_dir for config_dir, _, _ in _config_dirs(Path(home) if home else Path.home())]
+
+
 def _cswap_profile_dirs(home: Path) -> list[tuple[Path, str]]:
     """(profile dir, alias) for every claude-swap session profile.
 

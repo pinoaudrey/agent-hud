@@ -43,7 +43,7 @@ ACTIVITY_POLL_SECONDS = 2.0
 USAGE_POLL_SECONDS = 180.0
 SETUP_POLL_SECONDS = 60.0
 SWAP_POLL_SECONDS = 30.0
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Window durations, used to project a burn line for the tightest window.
 _WINDOW_SECONDS = {
@@ -409,7 +409,7 @@ def _resolve_swap(swap: dict | None, index, created: dict[str, str] | None = Non
 
 def build_snapshot(usages, fetched_at, agents, value=None, profiles=None, setup=None,
                    swap=None) -> dict:
-    """Fold collector outputs into a v3 HUD snapshot dict. Pure given its args:
+    """Fold collector outputs into a v4 HUD snapshot dict. Pure given its args:
     pass the Claude `profiles` list so each reading can be attributed to the
     subscription its config tree belongs to. No credentials ever land in the
     returned dict.
@@ -463,6 +463,14 @@ def build_snapshot(usages, fetched_at, agents, value=None, profiles=None, setup=
             "action": agent.label or None,
             "since_seconds": _elapsed_seconds(agent.elapsed),
             "subscription_id": sub_id,
+            "session_id": agent.session_id or None,
+            "title": agent.title or None,
+            "surface": agent.surface,
+            "tty": agent.tty or None,
+            "host_session_id": agent.host_session_id or None,
+            # A timestamp rather than a running count: a count would change on
+            # every poll and defeat the write-only-on-change rule in _rebuild.
+            "state_since": _iso(agent.state_since),
         })
 
     counts: dict[str, int] = {}
