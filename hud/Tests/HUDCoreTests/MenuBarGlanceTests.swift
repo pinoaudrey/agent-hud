@@ -89,7 +89,7 @@ final class MenuBarGlanceTests: XCTestCase {
 
     // MARK: - The readout
 
-    func testPersonalActiveReadsLetterTightestNumberAndTag() {
+    func testPersonalActiveReadsLetterFiveHourNumberAndTag() {
         let max = sub("claude-max", active: true,
                       windows: [window("session_5h", 61), window("weekly_7d", 83),
                                 window("weekly_fable", 90)])
@@ -99,14 +99,24 @@ final class MenuBarGlanceTests: XCTestCase {
         XCTAssertEqual(readout.tag, "5h")
     }
 
-    func testTheTagFollowsTheTightestWindowWhenItMoves() {
-        // The reason the tag exists: once the week is drier than the session,
-        // the number is the week's, and the bar has to say so.
+    func testTheNumberStaysOnTheFiveHourWindowWhenAWeekIsTighter() {
+        // The bar always means the 5-hour window, so a drier week does not
+        // take the number over. The week reads on the card.
         let max = sub("claude-max", active: true,
                       windows: [window("session_5h", 96), window("weekly_7d", 22)])
         let readout = GlanceReadout(sub: max, now: now)
-        XCTAssertEqual(readout.pctLeft, 22)
-        XCTAssertEqual(readout.tag, "wk")
+        XCTAssertEqual(readout.pctLeft, 96)
+        XCTAssertEqual(readout.tag, "5h")
+    }
+
+    func testAFiveHourWindowWithNoReadingIsADash() {
+        // The 5-hour window is there but unread. The bar does not swap in
+        // another window's number, which would read as the session's.
+        let max = sub("claude-max", active: true,
+                      windows: [window("session_5h", nil), window("weekly_7d", 80)])
+        let readout = GlanceReadout(sub: max, now: now)
+        XCTAssertNil(readout.pctLeft)
+        XCTAssertNil(readout.tag)
     }
 
     func testWorkActiveReadsW() {
@@ -114,8 +124,8 @@ final class MenuBarGlanceTests: XCTestCase {
                        windows: [window("session_5h", 40), window("weekly_fable", 31)])
         let readout = GlanceReadout(sub: team, now: now)
         XCTAssertEqual(readout.letter, "W")
-        XCTAssertEqual(readout.pctLeft, 31)
-        XCTAssertEqual(readout.tag, "fable")
+        XCTAssertEqual(readout.pctLeft, 40)
+        XCTAssertEqual(readout.tag, "5h")
     }
 
     func testAnEnterpriseSpendCapReadsAsDollars() {

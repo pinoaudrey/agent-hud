@@ -127,12 +127,14 @@ signed-in Claude plan, and a single amber dot when the agent setup has problems
 (nothing at all when it is clean, or when the daemon could not check it).
 
 The readout is `P 61 5h`: a letter for the account, the percent left in that
-plan's tightest window, and a tag that names the window. `P` is a plan you hold
-yourself (Max, Pro, or an individual org) and `W` is a seat at work (Team or
+plan's 5-hour session window, and a tag that names the window. `P` is a plan you
+hold yourself (Max, Pro, or an individual org) and `W` is a seat at work (Team or
 Enterprise); the letter comes from the plan word in the subscription id, and an
-id that names no plan shows `?`. The tag is `5h`, `wk`, `fable`, or `$` for an
-Enterprise spend cap. It is there because the tightest window moves as limits
-drain and reset, and a bare number would not say which window it was.
+id that names no plan shows `?`. The number is always the 5-hour window, so it
+means the same thing at every glance; the weekly and Fable limits read on the
+card. A plan with no 5-hour window (an Enterprise seat, whose one limit is the
+spend cap) shows its tightest window instead, and the tag says so: `$` for the
+spend cap.
 
 The bar speaks for one plan because that is the one a bare `claude` spends right
 now. Every other plan, and every window of each plan, reads on the card a click
