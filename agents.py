@@ -58,6 +58,7 @@ class RunningAgent:
     label: str = ""  # current action, e.g. "running command"
     tokens: int = 0  # live token count for this session (0 if unknown)
     surface: str = "terminal"  # "terminal" | "desktop" (the Claude Desktop app)
+    host_session_id: str = ""  # the Desktop app's own id for the session ("local_…")
     state_since: datetime | None = None  # when `state` last changed (None if unknown)
 
 
@@ -207,6 +208,7 @@ def claude_sessions(trees: list[str | Path]) -> list[RunningAgent]:
         desktop = record.get("entrypoint") == "claude-desktop"
         status = claude_status(record)
         cwd = record.get("cwd") if isinstance(record.get("cwd"), str) else ""
+        host_id = record.get("hostSessionId") if desktop else ""
         agents.append(RunningAgent(
             tool="claude",
             pid=pid,
@@ -218,6 +220,7 @@ def claude_sessions(trees: list[str | Path]) -> list[RunningAgent]:
             state=status.state,
             label=status.label,
             surface="desktop" if desktop else "terminal",
+            host_session_id=host_id if isinstance(host_id, str) else "",
             state_since=status.since,
         ))
     return agents

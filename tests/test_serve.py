@@ -167,17 +167,18 @@ def test_agents_are_mapped_and_state_normalised():
 def test_agents_carry_the_needs_you_fields():
     desktop = RunningAgent(tool="claude", pid=3, tty="", elapsed="1h 2m", cwd="/tmp/docs",
                            state="waiting", label="input needed", session_id="sess-3",
-                           title="Intake handoff", surface="desktop",
+                           title="Intake handoff", surface="desktop", host_session_id="local_e945",
                            state_since=datetime(2026, 10, 2, 18, 0, tzinfo=timezone.utc))
     snap = build_snapshot([], _now(), [*_fake_agents(), desktop])
     agents = {a["pid"]: a for a in snap["agents"]}
     assert set(agents[1]) == {"pid", "tool", "project", "cwd", "state", "action",
                               "since_seconds", "subscription_id", "session_id", "title",
-                              "surface", "tty", "state_since"}
+                              "surface", "tty", "host_session_id", "state_since"}
     assert agents[1]["title"] == "Fix the login redirect"
     assert (agents[1]["surface"], agents[1]["tty"]) == ("terminal", "ttys001")
     assert agents[1]["state_since"] == "2026-10-02T16:17:44+00:00"
     assert (agents[3]["surface"], agents[3]["tty"]) == ("desktop", None)
+    assert agents[3]["host_session_id"] == "local_e945" and agents[1]["host_session_id"] is None
     assert agents[3]["state"] == "waiting" and agents[3]["action"] == "input needed"
     # the codex agent has no title or transcript id to give: null, never ""
     assert agents[2]["title"] is None and agents[2]["session_id"] is None

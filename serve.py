@@ -467,6 +467,7 @@ def build_snapshot(usages, fetched_at, agents, value=None, profiles=None, setup=
             "title": agent.title or None,
             "surface": agent.surface,
             "tty": agent.tty or None,
+            "host_session_id": agent.host_session_id or None,
             # A timestamp rather than a running count: a count would change on
             # every poll and defeat the write-only-on-change rule in _rebuild.
             "state_since": _iso(agent.state_since),

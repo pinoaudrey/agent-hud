@@ -8,8 +8,8 @@ renamed.
 
 **v2** added the `setup` block, and later `subscriptions[].read_at`,
 `subscriptions[].trees`, and `subscriptions[].active`. **v3** added the `swap`
-block. **v4** added `agents[].session_id`, `title`, `surface`, `tty`, and
-`state_since`, and started to list Claude Desktop app sessions in `agents[]`.
+block. **v4** added `agents[].session_id`, `title`, `surface`, `tty`,
+`host_session_id`, and `state_since`, and started to list Claude Desktop app sessions in `agents[]`.
 Everything from v1 is unchanged, and every field added since is optional
 on the reading side, so an older snapshot still decodes.
 
@@ -160,6 +160,7 @@ dry (safe), negative means you would run out first at the current pace.
   "title": "Fix the login redirect",
   "surface": "terminal",
   "tty": "ttys012",
+  "host_session_id": null,
   "state_since": "2026-10-02T18:50:01.780000+00:00"
 }
 ```
@@ -187,6 +188,7 @@ opencode still come from a `ps` scan of processes with a terminal.
 | `title` | string or null | What to call the session. For Claude, best source first: the name the person gave it (or the name the Desktop app gave it), the newest AI title in the transcript, the newest prompt typed, then the working directory's basename. A name Claude Code made up from the directory is skipped. `null` for tools with no title source. Added in v4. |
 | `surface` | `"terminal"` \| `"desktop"` | Where the session lives. `desktop` is the Claude Desktop app, which has no terminal to raise; everything else is `terminal`. Absent before v4; decode it as `terminal`. |
 | `tty` | string or null | The session's controlling terminal as `ps` names it (`ttys012`), which is how a reader finds the Terminal tab to bring forward. `null` for `desktop` sessions and when unknown. Added in v4. |
+| `host_session_id` | string or null | The Claude Desktop app's own id for a `desktop` session (`local_e9459081-…`), which its `claude://code/continue?session=<id>` link opens. `null` for `terminal` sessions. Added in v4. |
 | `state_since` | ISO8601 string, or null | When `state` last changed: for a `waiting` session, when it started to wait; for an `idle` one, when it finished. A timestamp rather than a running count, so the snapshot does not change every second while nothing happens. `null` when unknown (every non-Claude agent today). Added in v4. |
 
 ## `value`

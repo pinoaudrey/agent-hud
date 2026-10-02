@@ -122,7 +122,7 @@ def test_claude_sessions_keep_desktop_and_drop_headless(tmp_path: Path, monkeypa
     _write_records(
         tree,
         _record(100, entrypoint="cli", status="waiting", waitingFor="input needed"),
-        _record(200, entrypoint="claude-desktop", status="busy"),
+        _record(200, entrypoint="claude-desktop", status="busy", hostSessionId="local_e945"),
         _record(300, entrypoint="sdk-cli", status="busy"),  # headless, never waits on you
     )
     calls = _fake_ps(monkeypatch, {
@@ -136,6 +136,7 @@ def test_claude_sessions_keep_desktop_and_drop_headless(tmp_path: Path, monkeypa
     cli, desktop = agents[100], agents[200]
     assert (cli.surface, cli.tty, cli.state, cli.label) == ("terminal", "ttys012", "waiting", "input needed")
     assert (desktop.surface, desktop.tty, desktop.state) == ("desktop", "", "working")
+    assert desktop.host_session_id == "local_e945" and cli.host_session_id == ""
     assert cli.session_id == "sess-100" and cli.cwd == "/Users/you/Repos/web-app"
     assert cli.elapsed == "12m"
     assert cli.state_since == datetime.fromtimestamp(1790963152.570, tz=timezone.utc)
