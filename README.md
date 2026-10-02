@@ -122,9 +122,9 @@ which ones wait on you and what they wait for.
 
 ## The menu bar
 
-One readout for the signed-in Claude plan, and a single amber dot when the agent
-setup has problems (nothing at all when it is clean, or when the daemon could not
-check it).
+The needs-you pill when a session waits on you (see below), one readout for the
+signed-in Claude plan, and a single amber dot when the agent setup has problems
+(nothing at all when it is clean, or when the daemon could not check it).
 
 The readout is `P 61 5h`: a letter for the account, the percent left in that
 plan's tightest window, and a tag that names the window. `P` is a plan you hold
