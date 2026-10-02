@@ -56,6 +56,9 @@ public struct MenuBarContentView: View {
 
     public var body: some View {
         HStack(spacing: 8) {
+            if needsYouCount > 0 {
+                NeedsYouBadge(count: needsYouCount)
+            }
             if !glanceSubs.isEmpty {
                 ForEach(glanceSubs) { sub in
                     GlanceNumber(
@@ -91,6 +94,11 @@ public struct MenuBarContentView: View {
         // status-item context, which turns "74" into "7…". The glance is never
         // legitimately compressible, so it always takes its ideal size.
         .fixedSize()
+    }
+
+    /// Sessions blocked on you. Leftmost on the bar, and absent at zero.
+    public var needsYouCount: Int {
+        snapshot?.waitingAgentCount ?? 0
     }
 
     /// True only for real problems. A setup the daemon could not check shows

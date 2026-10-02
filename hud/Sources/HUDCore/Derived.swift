@@ -90,6 +90,50 @@ extension Agent {
     public var isWaiting: Bool { state == "waiting" }
     public var isWorking: Bool { state == "working" }
     public var isIdle: Bool { !isWaiting && !isWorking }
+    /// A Claude Desktop app session, which has no terminal to raise.
+    public var isDesktop: Bool { surface == "desktop" }
+
+    /// The row name: the daemon's title, else the directory, else the tool, so
+    /// a row is never blank.
+    public var displayTitle: String {
+        if let title, !title.isEmpty { return title }
+        return project.isEmpty ? tool : project
+    }
+}
+
+/// The NEEDS YOU section's two groups.
+///
+/// Blocked is every session waiting on you, longest wait first: the one that
+/// has sat stopped the longest has cost the most. Finished is every session
+/// that went idle in the last two hours, newest first: the work you have not
+/// looked at yet. Past two hours a finished session is history, not a prompt.
+public struct NeedsYou: Equatable {
+    public let blocked: [Agent]
+    public let finished: [Agent]
+
+    public static let finishedWindow: TimeInterval = 2 * 3600
+
+    public var isEmpty: Bool { blocked.isEmpty && finished.isEmpty }
+
+    public init(agents: [Agent], now: Date) {
+        blocked = agents
+            .filter { $0.isWaiting }
+            .sorted { a, b in
+                // A wait with no start time (an older daemon) sorts last rather
+                // than claiming to be the longest.
+                let (x, y) = (a.stateSince ?? .distantFuture, b.stateSince ?? .distantFuture)
+                return x != y ? x < y : a.pid < b.pid
+            }
+        finished = agents
+            .filter { agent in
+                guard agent.state == "idle", let since = agent.stateSince else { return false }
+                return now.timeIntervalSince(since) <= Self.finishedWindow
+            }
+            .sorted { a, b in
+                let (x, y) = (a.stateSince ?? .distantPast, b.stateSince ?? .distantPast)
+                return x != y ? x > y : a.pid < b.pid
+            }
+    }
 }
 
 extension HUDSnapshot {
@@ -102,8 +146,13 @@ extension HUDSnapshot {
         subscriptions.filter { $0.provider != "codex" } + subscriptions.filter { $0.provider == "codex" }
     }
 
+    /// How many sessions are blocked on you: the menu bar's needs-you count.
     public var waitingAgentCount: Int {
         agents.filter { $0.isWaiting }.count
+    }
+
+    public func needsYou(now: Date) -> NeedsYou {
+        NeedsYou(agents: agents, now: now)
     }
 
     /// Agents that count as live: currently working or waiting. Idle and stale

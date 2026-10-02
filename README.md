@@ -92,7 +92,8 @@ python3 -m pytest tests         # the daemon: collectors, usage, pricing, snapsh
 
 ## The card
 
-Three sections, each a plain list: **LIMITS**, **SETUP**, **VALUE AT API RATES**.
+Each section is a plain list: **NEEDS YOU** (only when something does),
+**LIMITS**, **SETUP**, **VALUE AT API RATES**.
 
 A limits row is one window on one plan — what it is, a fuel bar for how much is
 left, the number, and when it comes back. It used to be three pods each
@@ -101,6 +102,23 @@ problem: which window it quoted moved with whatever happened to be tightest, so
 the same big figure meant the 5-hour session on one plan and the Fable weekly on
 another, and the reset line under it moved too. There is no headline now, and
 nothing shifts.
+
+## Needs you
+
+Sessions sit stopped while you work elsewhere. The daemon reads the record
+Claude Code writes for every live session, terminal or Desktop app, so it knows
+which ones wait on you and what they wait for.
+
+- **The menu bar** leads with a coral pill that counts the sessions blocked on
+  you. It is absent at zero.
+- **The card** opens with NEEDS YOU, in two groups. **Blocked** lists the
+  waiting sessions, longest wait first, with what each waits for. **Finished**
+  lists the sessions that went idle in the last two hours, newest first.
+- **A click on a row** brings that session forward. A terminal session selects
+  its Terminal.app tab by tty and raises the window. The first click triggers
+  the macOS Automation prompt for Terminal. A Desktop session opens in the
+  Claude app through `claude://code/continue?session=<id>`. A build of the app
+  that ignores the link still comes to the front.
 
 ## The menu bar
 

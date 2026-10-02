@@ -3,8 +3,8 @@ import SwiftUI
 import AppKit
 #endif
 
-// The click-through card. Top to bottom: a slim header, one pod per subscription
-// showing every window it reports, the account-rotation panel (when cswap
+// The click-through card. Top to bottom: a slim header, the sessions that need
+// you (when any do), one pod per subscription showing every window it reports, the account-rotation panel (when cswap
 // manages this machine), the setup panel, the API-value strip, and a footer.
 // Colors are the dynamic Theme tokens, so the whole card follows the system
 // light/dark appearance. Width 520, radius 16, hairline border.
@@ -15,11 +15,20 @@ public struct PopoverCard: View {
     /// Called when the footer's refresh is pressed. Nil in previews and tests,
     /// which is why the control is a seam rather than a direct call into the store.
     public var onRefresh: (() -> Void)?
+    /// Called when a NEEDS YOU row is clicked. Nil in previews and tests, for
+    /// the same reason as `onRefresh`.
+    public var onSelectAgent: ((Agent) -> Void)?
 
-    public init(snapshot: HUDSnapshot?, now: Date = Date(), onRefresh: (() -> Void)? = nil) {
+    public init(
+        snapshot: HUDSnapshot?,
+        now: Date = Date(),
+        onRefresh: (() -> Void)? = nil,
+        onSelectAgent: ((Agent) -> Void)? = nil
+    ) {
         self.snapshot = snapshot
         self.now = now
         self.onRefresh = onRefresh
+        self.onSelectAgent = onSelectAgent
     }
 
     private var orderedSubs: [Subscription] {
@@ -30,6 +39,10 @@ public struct PopoverCard: View {
         VStack(alignment: .leading, spacing: 16) {
             if let snap = snapshot {
                 CardHeaderView(now: now)
+                let needsYou = snap.needsYou(now: now)
+                if !needsYou.isEmpty {
+                    NeedsYouSection(needsYou: needsYou, now: now, onSelect: onSelectAgent)
+                }
                 LimitsSection(subs: orderedSubs, now: now)
                 if let swap = snap.swap {
                     SwapSection(swap: swap, subs: orderedSubs)

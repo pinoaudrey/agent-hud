@@ -255,7 +255,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showPanel() {
-        let card = CardHost().environmentObject(store)
+        // A NEEDS YOU row brings its session forward, then the card gets out of
+        // the way: it floats at status-bar level and would sit over the window
+        // the click just raised.
+        let card = CardHost { [weak self] agent in
+            SessionFocus.bringForward(agent)
+            self?.hidePanel()
+        }
+        .environmentObject(store)
         let hosting = NSHostingController(rootView: AnyView(card))
 
         let panel = NSPanel(
@@ -295,10 +302,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// SwiftUI wrapper for the card so it redraws on every poll.
 private struct CardHost: View {
     @EnvironmentObject var store: HUDStore
+    let onSelectAgent: (Agent) -> Void
+
     var body: some View {
-        PopoverCard(snapshot: store.snapshot, now: store.now) {
-            store.refreshNow()
-        }
+        PopoverCard(
+            snapshot: store.snapshot,
+            now: store.now,
+            onRefresh: { store.refreshNow() },
+            onSelectAgent: onSelectAgent
+        )
         .padding(10)
     }
 }

@@ -34,4 +34,18 @@ final class RenderTests: XCTestCase {
         try PreviewRenderer.renderCardPNG(to: out, scale: 2, colorScheme: .light)
         try assertNonEmptyPNG(at: out)
     }
+
+    /// The sample has sessions blocked on you, so these carry the needs-you
+    /// badge on the bar and the NEEDS YOU section on the card, in both inks.
+    @MainActor
+    func testRendersMenubarInBothInksToNonEmptyPNG() throws {
+        for scheme in [ColorScheme.dark, .light] {
+            let out = FileManager.default.temporaryDirectory
+                .appendingPathComponent("agenthud-hud-menubar-test-\(UUID().uuidString).png")
+            defer { try? FileManager.default.removeItem(at: out) }
+
+            try PreviewRenderer.renderMenubarPNG(to: out, scale: 2, colorScheme: scheme)
+            try assertNonEmptyPNG(at: out)
+        }
+    }
 }
