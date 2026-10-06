@@ -163,3 +163,28 @@ final class NeedsYouTests: XCTestCase {
         XCTAssertEqual(waited(-30), "<1m")  // clock skew is not a negative wait
     }
 }
+
+/// Which NEEDS YOU rows get the hover wash and the hand cursor: only the rows a
+/// click can act on.
+final class NeedsYouClickableTests: XCTestCase {
+
+    private func agent(tty: String?, surface: String = "terminal") -> Agent {
+        Agent(pid: 1, tool: "claude", project: "p", cwd: "/p", state: "waiting", action: nil,
+              sinceSeconds: nil, subscriptionID: nil, surface: surface, tty: tty)
+    }
+
+    private func section(onSelect: ((Agent) -> Void)?) -> NeedsYouSection {
+        NeedsYouSection(needsYou: NeedsYou(agents: [], now: Date()), now: Date(), onSelect: onSelect)
+    }
+
+    func testARowWithSomewhereToGoIsClickable() {
+        let live = section(onSelect: { _ in })
+        XCTAssertTrue(live.isClickable(agent(tty: "ttys012")))
+        XCTAssertTrue(live.isClickable(agent(tty: nil, surface: "desktop")))
+    }
+
+    func testARowWithNowhereToGoIsNot() {
+        XCTAssertFalse(section(onSelect: { _ in }).isClickable(agent(tty: nil)))
+        XCTAssertFalse(section(onSelect: nil).isClickable(agent(tty: "ttys012")))
+    }
+}

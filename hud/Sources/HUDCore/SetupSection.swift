@@ -23,11 +23,7 @@ public struct SetupSection: View {
                 if setup.isClean {
                     SetupAllClearView(sections: setup.sections)
                 } else {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(setup.sections) { section in
-                            SetupRow(section: section)
-                        }
-                    }
+                    SetupProblemList(sections: setup.sections)
                 }
             } else {
                 SetupUnknownView()
@@ -56,6 +52,69 @@ public struct SetupSection: View {
 
     private func problemCount(_ n: Int) -> String {
         n == 1 ? "1 problem" : "\(n) problems"
+    }
+}
+
+// MARK: - Problems
+
+/// A day with problems. The problems lead, each open with its fix; the checks
+/// that passed fold behind one row, because a dozen green lines pushed the card
+/// past the bottom of a laptop screen and hid the problem rows under them.
+struct SetupProblemList: View {
+    let sections: [SetupSectionResult]
+    @State private var showsPassing: Bool
+
+    init(sections: [SetupSectionResult], showsPassing: Bool = false) {
+        self.sections = sections
+        _showsPassing = State(initialValue: showsPassing)
+    }
+
+    var body: some View {
+        let passing = sections.filter { !$0.isProblem }
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(sections.filter(\.isProblem)) { section in
+                SetupRow(section: section)
+            }
+            if !passing.isEmpty {
+                PassingToggle(count: passing.count, isExpanded: showsPassing) {
+                    withAnimation(.easeOut(duration: 0.18)) { showsPassing.toggle() }
+                }
+                if showsPassing {
+                    ForEach(passing) { section in
+                        SetupRow(section: section)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The fold over the passing checks: how many, and a chevron that says which
+/// way it opens.
+struct PassingToggle: View {
+    let count: Int
+    let isExpanded: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle().fill(Theme.green).frame(width: 6, height: 6)
+            Text(count == 1 ? "1 check passes" : "\(count) checks pass")
+                .font(Theme.label(12))
+                .foregroundStyle(Theme.muted)
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.faint)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .clickableRow()
+        .onTapGesture(perform: onToggle)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(isExpanded ? "Hide the passing checks" : "Show the passing checks")
     }
 }
 

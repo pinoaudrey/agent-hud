@@ -1,9 +1,10 @@
 # agent-hud
 
-A macOS menu-bar readout for the three things that decide whether a working day
-goes well: how much subscription quota is left across Claude and Codex, what
-that usage would have cost at API rates, and whether the shared agent setup in
-`~/.agents` is still healthy.
+A macOS menu-bar readout for what decides whether a working day goes well: the
+sessions waiting on you, how much subscription quota is left across Claude and
+Codex, and whether the shared agent setup in `~/.agents` is still healthy. The
+daemon still prices usage at API rates (`pricing.py`), but the card no longer
+shows that figure.
 
 It is read-only. Nothing in here mutates the machine; the worst it can do is
 tell you to go run something yourself.
@@ -93,7 +94,7 @@ python3 -m pytest tests         # the daemon: collectors, usage, pricing, snapsh
 ## The card
 
 Each section is a plain list: **NEEDS YOU** (only when something does),
-**LIMITS**, **SETUP**, **VALUE AT API RATES**.
+**LIMITS**, **ACCOUNT ROTATION** (when cswap manages the machine), **SETUP**.
 
 A limits row is one window on one plan — what it is, a fuel bar for how much is
 left, the number, and when it comes back. It used to be three pods each

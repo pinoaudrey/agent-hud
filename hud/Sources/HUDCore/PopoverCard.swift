@@ -5,7 +5,7 @@ import AppKit
 
 // The click-through card. Top to bottom: a slim header, the sessions that need
 // you (when any do), one pod per subscription showing every window it reports, the account-rotation panel (when cswap
-// manages this machine), the setup panel, the API-value strip, and a footer.
+// manages this machine), the setup panel, and a footer.
 // Colors are the dynamic Theme tokens, so the whole card follows the system
 // light/dark appearance. Width 520, radius 16, hairline border.
 
@@ -48,9 +48,6 @@ public struct PopoverCard: View {
                     SwapSection(swap: swap, subs: orderedSubs)
                 }
                 SetupSection(setup: snap.setup)
-                if let value = snap.value {
-                    ValueStripView(value: value, subs: orderedSubs, now: now)
-                }
                 FooterView(setup: snap.setup, generatedAt: snap.generatedAt,
                            now: now, onRefresh: onRefresh)
             } else {
@@ -296,128 +293,6 @@ struct LimitRow: View {
     private var resetText: String {
         guard let reset = window.resetsAt else { return "no reset reported" }
         return "resets \(Fmt.dayClock(reset, now: now))"
-    }
-}
-
-// MARK: - Value strip
-
-/// The API-value readout: three tiles for today, the month, and the multiple
-/// over what the subscriptions cost, then a line per subscription. The
-/// per-subscription split is the part that answers "which plan is doing the
-/// work", which the totals alone cannot.
-struct ValueStripView: View {
-    let value: ValueBlock
-    let subs: [Subscription]
-    let now: Date
-
-    private var monthName: String {
-        let f = DateFormatter()
-        f.dateFormat = "MMMM"
-        return f.string(from: now).uppercased()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            SectionRule(title: "VALUE AT API RATES")
-            HStack(spacing: 9) {
-                tile(caption: "TODAY", value: Fmt.usd(value.todayUSD))
-                tile(caption: monthName, value: Fmt.usd(value.monthUSD))
-                multipleTile
-            }
-            if !bySub.isEmpty {
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(bySub, id: \.label) { row in
-                        HStack(spacing: 8) {
-                            Circle().fill(row.color).frame(width: 7, height: 7)
-                            Text(row.label)
-                                .font(Theme.label(12))
-                                .foregroundStyle(row.isSpent ? Theme.text : Theme.faint)
-                            Spacer(minLength: 8)
-                            Text(Fmt.usdExact(row.monthUSD))
-                                .font(Theme.label(12))
-                                .foregroundStyle(row.isSpent ? Theme.text : Theme.faint)
-                                .monospacedDigit()
-                        }
-                    }
-                }
-                .padding(.horizontal, 3)
-            }
-        }
-    }
-
-    private struct SubRow {
-        let label: String
-        let color: Color
-        let monthUSD: Double
-        /// A plan that spent nothing this month recedes rather than disappearing:
-        /// "this one is idle" is itself worth seeing.
-        var isSpent: Bool { monthUSD > 0 }
-    }
-
-    /// Biggest spender first, so the line that explains the total leads.
-    private var bySub: [SubRow] {
-        subs.compactMap { sub in
-            guard let v = value.bySub[sub.id] else { return nil }
-            let color = sub.provider == "codex" ? Theme.codexGreen : Theme.claudeCoral
-            return SubRow(label: sub.label,
-                          color: v.monthUSD > 0 ? color : Theme.faint,
-                          monthUSD: v.monthUSD)
-        }
-        .sorted { $0.monthUSD > $1.monthUSD }
-    }
-
-    private func tile(caption: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(caption)
-                .font(Theme.label(9, weight: .semibold))
-                .tracking(1.0)
-                .foregroundStyle(Theme.muted)
-            Text(value)
-                .font(Theme.mono(22, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 13)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.panel2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.hairline, lineWidth: 1)
-        )
-    }
-
-    /// The multiple needs to know what the subscriptions cost, which lives in a
-    /// config file nobody has to fill in. Unset, the tile says what to do about
-    /// it rather than showing a dash that reads like a bug.
-    @ViewBuilder
-    private var multipleTile: some View {
-        if let multiple = value.multiple {
-            tile(caption: "MULTIPLE", value: Fmt.multiple(multiple))
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("MULTIPLE")
-                    .font(Theme.label(9, weight: .semibold))
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.muted)
-                Text("set what the subs cost")
-                    .font(Theme.label(12))
-                    .foregroundStyle(Theme.faint)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 13)
-            .padding(.vertical, 12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    .foregroundStyle(Theme.hairline)
-            )
-        }
     }
 }
 

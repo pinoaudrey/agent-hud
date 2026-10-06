@@ -258,10 +258,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A NEEDS YOU row brings its session forward, then the card gets out of
         // the way: it floats at status-bar level and would sit over the window
         // the click just raised.
-        let card = CardHost { [weak self] agent in
-            SessionFocus.bringForward(agent)
-            self?.hidePanel()
-        }
+        let card = CardHost(
+            onSelectAgent: { [weak self] agent in
+                SessionFocus.bringForward(agent)
+                self?.hidePanel()
+            },
+            onResize: { [weak self] size in self?.resizePanel(to: size) }
+        )
         .environmentObject(store)
         let hosting = NSHostingController(rootView: AnyView(card))
 
@@ -297,12 +300,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.panel = panel
         installDismissMonitors()
     }
+
+    /// Follow the card when its content changes height (the setup fold opening,
+    /// a NEEDS YOU row arriving). The top edge stays under the status item, so
+    /// the card grows and shrinks at the bottom.
+    private func resizePanel(to size: CGSize) {
+        guard let panel, size.height > 0, abs(panel.frame.height - size.height) > 0.5 else { return }
+        var frame = panel.frame
+        frame.origin.y = frame.maxY - size.height
+        frame.size = size
+        panel.setFrame(frame, display: true)
+    }
 }
 
 /// SwiftUI wrapper for the card so it redraws on every poll.
 private struct CardHost: View {
     @EnvironmentObject var store: HUDStore
     let onSelectAgent: (Agent) -> Void
+    let onResize: (CGSize) -> Void
 
     var body: some View {
         PopoverCard(
@@ -312,6 +327,16 @@ private struct CardHost: View {
             onSelectAgent: onSelectAgent
         )
         .padding(10)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { proxy in
+            Color.clear.preference(key: CardSizeKey.self, value: proxy.size)
+        })
+        .onPreferenceChange(CardSizeKey.self, perform: onResize)
     }
+}
+
+private struct CardSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
 }
 

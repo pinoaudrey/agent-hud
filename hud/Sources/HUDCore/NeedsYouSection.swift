@@ -37,7 +37,7 @@ public struct NeedsYouSection: View {
     }
 
     private func group(_ title: String, dot: Color, agents: [Agent]) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 7) {
                 Circle().fill(dot).frame(width: 7, height: 7)
                 Text(title)
@@ -48,13 +48,22 @@ public struct NeedsYouSection: View {
                     .font(Theme.mono(10))
                     .foregroundStyle(Theme.faint)
             }
+            .padding(.bottom, 4)
             ForEach(agents) { agent in
                 NeedsYouRow(agent: agent, now: now)
-                    .contentShape(Rectangle())
+                    .padding(.vertical, 2)
+                    .padding(.trailing, 6)
+                    .clickableRow(isEnabled: isClickable(agent))
                     .onTapGesture { onSelect?(agent) }
                     .help(agent.isDesktop ? "Open in Claude" : "Bring its Terminal tab forward")
             }
         }
+    }
+
+    /// A row is a control only when a click can do something: a terminal
+    /// session with no tty has no tab to bring forward.
+    func isClickable(_ agent: Agent) -> Bool {
+        onSelect != nil && SessionFocus.action(for: agent) != .none
     }
 }
 

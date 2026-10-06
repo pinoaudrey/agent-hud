@@ -64,18 +64,6 @@ final class FormattingTests: XCTestCase {
         XCTAssertEqual(Fmt.glanceTag(kind: "spend"), "$")
     }
 
-    // MARK: Value formatting
-
-    func testUSDFormatting() {
-        XCTAssertEqual(Fmt.usd(182), "$182")
-        XCTAssertEqual(Fmt.usd(3140), "$3.1k")
-        XCTAssertEqual(Fmt.usd(0), "$0")
-    }
-
-    func testMultipleFormatting() {
-        XCTAssertEqual(Fmt.multiple(12.6), "12.6×")
-    }
-
     func testSinceLabel() {
         XCTAssertEqual(Fmt.sinceLabel(seconds: 44), "44s")
         XCTAssertEqual(Fmt.sinceLabel(seconds: 72), "1m12")

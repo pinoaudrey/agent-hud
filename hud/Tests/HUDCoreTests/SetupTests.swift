@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import HUDCore
 
 /// Decoding the setup block, the states the panel has to distinguish, and the
@@ -173,5 +174,36 @@ final class SetupTests: XCTestCase {
         try PreviewRenderer.renderCardPNG(snapshot: snap, to: url)
         let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int ?? 0
         XCTAssertGreaterThan(size, 1000)
+    }
+}
+
+/// The fold over the passing checks: the problems stay open, the passing
+/// checks fold behind one row, and the card is shorter for it.
+final class SetupFoldTests: XCTestCase {
+
+    private func section(_ title: String, problem: Bool) -> SetupSectionResult {
+        SetupSectionResult(
+            title: title, label: title, summary: problem ? "1 files" : "ok",
+            status: problem ? "problem" : "ok",
+            results: [SetupResult(status: problem ? "problem" : "ok", message: title,
+                                  fix: problem ? "run it" : "", fixCommand: problem ? "bin/capture.sh" : "")])
+    }
+
+    private var sections: [SetupSectionResult] {
+        (1...12).map { section("check \($0)", problem: false) } + [section("the machine is ahead", problem: true)]
+    }
+
+    @MainActor
+    private func height(_ view: some View) -> CGFloat {
+        let renderer = ImageRenderer(content: view.frame(width: 500))
+        return renderer.cgImage.map { CGFloat($0.height) / renderer.scale } ?? 0
+    }
+
+    @MainActor
+    func testThePassingChecksFoldAndTheCardIsShorter() {
+        let folded = height(SetupProblemList(sections: sections))
+        let open = height(SetupProblemList(sections: sections, showsPassing: true))
+        XCTAssertGreaterThan(folded, 0)
+        XCTAssertLessThan(folded * 2, open)
     }
 }
