@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// HUD until the app itself was relaunched.
     private var supervision = DaemonSupervision()
     private var supervisionTimer: Timer?
+    private var needsYouNotifier: NeedsYouNotifier?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Launching the app is all it takes: bring up the data daemon ourselves
@@ -57,10 +58,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Re-render on every poll. Published fires the current value on
         // subscribe, so this also draws the initial state.
+        let notifier = NeedsYouNotifier { [weak self] pid in
+            self?.store.snapshot?.agents.first { $0.pid == pid }
+        }
+        needsYouNotifier = notifier
         renderGlance()
         store.$snapshot
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.renderGlance() }
+            .sink { [weak self] snapshot in
+                self?.renderGlance()
+                notifier.update(with: snapshot)
+            }
             .store(in: &cancellables)
 
         startSupervisingDaemon()

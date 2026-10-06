@@ -119,6 +119,12 @@ which ones wait on you and what they wait for.
   the macOS Automation prompt for Terminal. A Desktop session opens in the
   Claude app through `claude://code/continue?session=<id>`. A build of the app
   that ignores the link still comes to the front.
+- **A notification** goes out when a session starts to wait. A click on it does
+  what a click on the row does. The notification goes away when the wait ends.
+  The sessions that are already waiting at launch do not send one, and a
+  finished session never does. The first launch asks for permission. The
+  notifications work only in `AgentHUD.app`, because `swift run` has no bundle
+  id.
 
 ## The menu bar
 
