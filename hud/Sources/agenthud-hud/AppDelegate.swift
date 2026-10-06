@@ -192,7 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showStatusMenu() {
         let menu = NSMenu()
         menu.addItem(
-            withTitle: "Quit Agent HUD",
+            withTitle: "Quit Clubhouse",
             action: #selector(quitApp),
             keyEquivalent: "q"
         )

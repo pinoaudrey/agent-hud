@@ -1,7 +1,7 @@
 #!/bin/bash
-# Build Agent HUD into a double-clickable .app bundle.
+# Build Clubhouse into a double-clickable .app bundle.
 #
-#   ./build-app.sh            build ./AgentHUD.app
+#   ./build-app.sh            build ./Clubhouse.app
 #   ./build-app.sh --install  build it and copy it into /Applications
 #
 # It's a normal menu-bar app: double-click it, or add it to
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
-APP="AgentHUD.app"
+APP="Clubhouse.app"
 CONTENTS="$APP/Contents"
 REPO_ROOT="$(cd .. && pwd)"   # holds main.py (the daemon)
 
@@ -32,8 +32,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>Agent HUD</string>
-    <key>CFBundleDisplayName</key><string>Agent HUD</string>
+    <key>CFBundleName</key><string>Clubhouse</string>
+    <key>CFBundleDisplayName</key><string>Clubhouse</string>
     <key>CFBundleIdentifier</key><string>com.agenthud.hud</string>
     <key>CFBundleExecutable</key><string>agenthud-hud</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -47,7 +47,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <!-- Shown in the one-time Automation prompt the first time a NEEDS YOU
          row brings a Terminal tab forward. Without it macOS refuses the
          Apple Event and never asks. -->
-    <key>NSAppleEventsUsageDescription</key><string>Agent HUD selects the Terminal tab of the session you click.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Clubhouse selects the Terminal tab of the session you click.</string>
     <!-- Where the Python daemon (main.py) lives, so the app can start
          it even when installed outside the repo (e.g. /Applications). -->
     <key>AHDaemonRoot</key><string>${REPO_ROOT}</string>
@@ -61,7 +61,7 @@ if [ "${1:-}" = "--install" ]; then
     cp -R "$APP" "/Applications/$APP"
     touch "/Applications/$APP"   # nudge Finder/Dock to pick up the icon
     echo "Installed: /Applications/$APP"
-    echo "Open it from Applications or Spotlight (\"Agent HUD\")."
+    echo "Open it from Applications or Spotlight (\"Clubhouse\")."
     echo "To start at login: System Settings > General > Login Items > +."
 else
     echo "Built: $(pwd)/$APP"
