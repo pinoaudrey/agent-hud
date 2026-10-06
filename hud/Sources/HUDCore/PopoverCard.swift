@@ -43,10 +43,7 @@ public struct PopoverCard: View {
                 if !needsYou.isEmpty {
                     NeedsYouSection(needsYou: needsYou, now: now, onSelect: onSelectAgent)
                 }
-                LimitsSection(subs: orderedSubs, now: now)
-                if let swap = snap.swap {
-                    SwapSection(swap: swap, subs: orderedSubs)
-                }
+                LimitsSection(subs: orderedSubs, now: now, swap: snap.swap)
                 SetupSection(setup: snap.setup)
                 FooterView(setup: snap.setup, generatedAt: snap.generatedAt,
                            now: now, onRefresh: onRefresh)
@@ -146,16 +143,51 @@ struct LimitsSection: View {
         subs.filter { $0.provider == "claude" }.count > 1
     }
     let now: Date
+    /// cswap's state, when cswap manages this machine. Only the auto-rotation
+    /// verdict shows: the SIGNED IN badge already says which account is live.
+    var swap: SwapBlock? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionRule(title: "LIMITS")
+            SectionRule(title: "ACCOUNTS") {
+                if let swap { AutoRotationStatus(auto: swap.auto) }
+            }
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(subs) { sub in
                     PlanLimits(sub: sub, now: now, marksActive: marksActive)
                 }
             }
         }
+    }
+}
+
+/// The auto-rotator's state on the ACCOUNTS rule. `nil` reads as unknown,
+/// never as off: a rotator nobody could ask about might switch accounts now.
+struct AutoRotationStatus: View {
+    let auto: SwapAuto?
+
+    var text: String {
+        switch auto?.running {
+        case true?: "auto-rotation on"
+        case false?: "auto-rotation off"
+        case nil: "auto-rotation unknown"
+        }
+    }
+
+    private var color: Color {
+        switch auto?.running {
+        case true?: Theme.green
+        case false?: Theme.amber
+        case nil: Theme.muted
+        }
+    }
+
+    var body: some View {
+        Text(text)
+            .font(Theme.label(11))
+            .tracking(0.4)
+            .foregroundStyle(color)
+            .fixedSize()
     }
 }
 
@@ -208,14 +240,6 @@ struct PlanLimits: View {
             } else {
                 ForEach(Array(sub.windows.enumerated()), id: \.offset) { _, window in
                     LimitRow(window: window, now: now)
-                }
-                if sub.sessionWindow == nil {
-                    // Codex reports only a weekly limit. Saying so beats leaving
-                    // a reader to wonder where the 5h row went.
-                    Text("no session limit")
-                        .font(Theme.label(10))
-                        .foregroundStyle(Theme.faint)
-                        .padding(.leading, 14)
                 }
             }
         }

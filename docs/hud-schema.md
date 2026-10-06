@@ -71,7 +71,7 @@ Run it with `agenthud serve` (or `agenthud --serve`), optionally with `--host` a
 | `value` | object or null | Dollar value delivered vs. subscription cost. `null` when the pricing collector is unavailable. |
 | `soonest_reset` | object or null | The single earliest-resetting window across all subscriptions, or `null` when no window reports a reset time. |
 | `setup` | object or null | Whether the shared agent setup in `~/.agents` is healthy, verbatim from `check-setup.sh --json`. `null` means the question could not be asked — **never that the setup is fine**. |
-| `swap` | object or null | claude-swap's account rotation state: the managed slots, which one holds the default profile's credential, and whether the auto-rotator is alive. `null` means cswap is absent or could not answer — the card omits the section, **never renders it as "rotation off"**. |
+| `swap` | object or null | claude-swap's account rotation state: the managed slots, which one holds the default profile's credential, and whether the auto-rotator is alive. `null` means cswap is absent or could not answer — the card omits the auto-rotation state from the ACCOUNTS rule, **never renders it as "rotation off"**. |
 
 ## `subscriptions[]`
 

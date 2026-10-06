@@ -94,7 +94,8 @@ python3 -m pytest tests         # the daemon: collectors, usage, pricing, snapsh
 ## The card
 
 Each section is a plain list: **NEEDS YOU** (only when something does),
-**LIMITS**, **ACCOUNT ROTATION** (when cswap manages the machine), **SETUP**.
+**ACCOUNTS** (with the auto-rotation state on the right when cswap manages
+the machine), **SETUP**.
 
 A limits row is one window on one plan — what it is, a fuel bar for how much is
 left, the number, and when it comes back. It used to be three pods each
