@@ -113,28 +113,6 @@ public enum Fmt {
         return "\(hours / 24)d \(hours % 24)h"
     }
 
-    /// Dollars to the cent, for the per-subscription lines where the figures are
-    /// being compared against each other and rounding hides the difference.
-    public static func usdExact(_ amount: Double) -> String {
-        String(format: "$%.2f", amount)
-    }
-
-    /// A US-dollar readout for the value tiles, e.g. "$182" or "$4.1k".
-    public static func usd(_ amount: Double) -> String {
-        if amount >= 10_000 {
-            return String(format: "$%.1fk", amount / 1000)
-        }
-        if amount >= 1000 {
-            return String(format: "$%.1fk", amount / 1000)
-        }
-        return "$" + String(format: "%.0f", amount)
-    }
-
-    /// The API-value multiple, e.g. "12.6×".
-    public static func multiple(_ x: Double) -> String {
-        String(format: "%.1f×", x)
-    }
-
     /// Time-in-state for an agent row, e.g. "1m12" / "44s" / "2h06".
     public static func sinceLabel(seconds: Int?) -> String {
         guard let s = seconds, s >= 0 else { return "" }

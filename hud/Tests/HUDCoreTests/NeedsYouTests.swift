@@ -163,3 +163,48 @@ final class NeedsYouTests: XCTestCase {
         XCTAssertEqual(waited(-30), "<1m")  // clock skew is not a negative wait
     }
 }
+
+/// Which NEEDS YOU rows get the hover wash and the hand cursor: only the rows a
+/// click can act on.
+final class NeedsYouClickableTests: XCTestCase {
+
+    private func agent(tty: String?, surface: String = "terminal") -> Agent {
+        Agent(pid: 1, tool: "claude", project: "p", cwd: "/p", state: "waiting", action: nil,
+              sinceSeconds: nil, subscriptionID: nil, surface: surface, tty: tty)
+    }
+
+    private func section(onSelect: ((Agent) -> Void)?) -> NeedsYouSection {
+        NeedsYouSection(needsYou: NeedsYou(agents: [], now: Date()), now: Date(), onSelect: onSelect)
+    }
+
+    func testARowWithSomewhereToGoIsClickable() {
+        let live = section(onSelect: { _ in })
+        XCTAssertTrue(live.isClickable(agent(tty: "ttys012")))
+        XCTAssertTrue(live.isClickable(agent(tty: nil, surface: "desktop")))
+    }
+
+    func testARowWithNowhereToGoIsNot() {
+        XCTAssertFalse(section(onSelect: { _ in }).isClickable(agent(tty: nil)))
+        XCTAssertFalse(section(onSelect: nil).isClickable(agent(tty: "ttys012")))
+    }
+}
+
+/// Finished starts folded behind its heading, and opens to the full rows.
+final class NeedsYouFinishedFoldTests: XCTestCase {
+
+    @MainActor
+    private func height(_ view: some View) -> CGFloat {
+        let renderer = ImageRenderer(content: view.frame(width: 500))
+        return renderer.cgImage.map { CGFloat($0.height) / renderer.scale } ?? 0
+    }
+
+    @MainActor
+    func testFinishedStartsFoldedAndOpensTaller() {
+        let needsYou = HUDSnapshot.sample.needsYou(now: HUDSnapshot.previewNow)
+        XCTAssertFalse(needsYou.finished.isEmpty)
+        let folded = height(NeedsYouSection(needsYou: needsYou, now: HUDSnapshot.previewNow))
+        let open = height(NeedsYouSection(needsYou: needsYou, now: HUDSnapshot.previewNow, showsFinished: true))
+        XCTAssertGreaterThan(folded, 0)
+        XCTAssertLessThan(folded + 30, open)
+    }
+}

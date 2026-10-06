@@ -15,11 +15,16 @@ public struct NeedsYouSection: View {
     /// Called with the row's agent on a click. Nil in previews and tests, which
     /// is why it is a seam rather than a direct call into SessionFocus.
     public var onSelect: ((Agent) -> Void)?
+    /// Finished starts folded: a finished session can wait for a look, and its
+    /// rows pushed the limits and the setup panel down the card.
+    @State private var showsFinished: Bool
 
-    public init(needsYou: NeedsYou, now: Date, onSelect: ((Agent) -> Void)? = nil) {
+    public init(needsYou: NeedsYou, now: Date, onSelect: ((Agent) -> Void)? = nil,
+                showsFinished: Bool = false) {
         self.needsYou = needsYou
         self.now = now
         self.onSelect = onSelect
+        _showsFinished = State(initialValue: showsFinished)
     }
 
     public var body: some View {
@@ -30,31 +35,72 @@ public struct NeedsYouSection: View {
                     group("BLOCKED", dot: Theme.claudeCoral, agents: needsYou.blocked)
                 }
                 if !needsYou.finished.isEmpty {
-                    group("FINISHED", dot: Theme.agentDot, agents: needsYou.finished)
+                    group("FINISHED", dot: Theme.agentDot, agents: needsYou.finished,
+                          isExpanded: showsFinished) {
+                        withAnimation(.easeOut(duration: 0.18)) { showsFinished.toggle() }
+                    }
                 }
             }
         }
     }
 
-    private func group(_ title: String, dot: Color, agents: [Agent]) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 7) {
-                Circle().fill(dot).frame(width: 7, height: 7)
-                Text(title)
-                    .font(Theme.label(10, weight: .semibold))
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.muted)
-                Text("\(agents.count)")
-                    .font(Theme.mono(10))
-                    .foregroundStyle(Theme.faint)
-            }
-            ForEach(agents) { agent in
+    /// A group with `onToggle` folds: its heading becomes the control, with a
+    /// chevron, and its rows show only while it is open.
+    private func group(_ title: String, dot: Color, agents: [Agent],
+                       isExpanded: Bool = true, onToggle: (() -> Void)? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            groupHeading(title, dot: dot, count: agents.count,
+                         isExpanded: isExpanded, onToggle: onToggle)
+            ForEach(isExpanded ? agents : []) { agent in
                 NeedsYouRow(agent: agent, now: now)
-                    .contentShape(Rectangle())
+                    .padding(.vertical, 2)
+                    .padding(.trailing, 6)
+                    .clickableRow(isEnabled: isClickable(agent))
                     .onTapGesture { onSelect?(agent) }
                     .help(agent.isDesktop ? "Open in Claude" : "Bring its Terminal tab forward")
             }
         }
+    }
+
+    @ViewBuilder
+    private func groupHeading(_ title: String, dot: Color, count: Int,
+                              isExpanded: Bool, onToggle: (() -> Void)?) -> some View {
+        let heading = HStack(spacing: 7) {
+            Circle().fill(dot).frame(width: 7, height: 7)
+            Text(title)
+                .font(Theme.label(10, weight: .semibold))
+                .tracking(1.0)
+                .foregroundStyle(Theme.muted)
+            Text("\(count)")
+                .font(Theme.mono(10))
+                .foregroundStyle(Theme.faint)
+            if onToggle != nil {
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.faint)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .padding(.trailing, 10)
+            }
+        }
+        if let onToggle {
+            heading
+                .padding(.vertical, 3)
+                .clickableRow()
+                .onTapGesture(perform: onToggle)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint(isExpanded ? "Hide the finished sessions" : "Show the finished sessions")
+                .padding(.bottom, isExpanded ? 1 : 0)
+        } else {
+            heading.padding(.bottom, 4)
+        }
+    }
+
+    /// A row is a control only when a click can do something: a terminal
+    /// session with no tty has no tab to bring forward.
+    func isClickable(_ agent: Agent) -> Bool {
+        onSelect != nil && SessionFocus.action(for: agent) != .none
     }
 }
 

@@ -57,7 +57,7 @@ final class LimitsSectionTests: XCTestCase {
     func testAPlanWithOneLimitDrawsOneRow() {
         let s = sub("codex", provider: "codex", windows: [window("weekly", 81)])
         XCTAssertEqual(s.windows.count, 1)
-        XCTAssertNil(s.sessionWindow)  // which is what puts "no session limit" under it
+        XCTAssertNil(s.sessionWindow)
     }
 
     func testWindowNamesAreTheOnesAReaderSees() {
@@ -114,5 +114,16 @@ final class LimitsSectionTests: XCTestCase {
         try PreviewRenderer.renderCardPNG(snapshot: snap, now: now, to: url)
         let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int ?? 0
         XCTAssertGreaterThan(size, 1000)
+    }
+}
+
+/// The ACCOUNTS rule carries the auto-rotator's state, and says unknown rather
+/// than off when nobody could ask.
+final class AutoRotationStatusTests: XCTestCase {
+
+    func testTheRotatorStateReadsOnOffOrUnknown() {
+        XCTAssertEqual(AutoRotationStatus(auto: SwapAuto(running: true, threshold: 90)).text, "auto-rotation on")
+        XCTAssertEqual(AutoRotationStatus(auto: SwapAuto(running: false, threshold: nil)).text, "auto-rotation off")
+        XCTAssertEqual(AutoRotationStatus(auto: nil).text, "auto-rotation unknown")
     }
 }
