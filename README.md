@@ -1,4 +1,7 @@
-# agent-hud
+# clubhouse
+
+Forked from josephtutera/agent-hud. The app was Agent HUD until 2026-10-06.
+The Python package, the `agenthud` CLI, and `~/.cache/agenthud` keep the old name.
 
 A macOS menu-bar readout for what decides whether a working day goes well: the
 sessions waiting on you, how much subscription quota is left across Claude and
@@ -43,7 +46,7 @@ python3 main.py serve           # --host / --port to move it
 
 ```sh
 cd hud
-./build-app.sh --install        # builds AgentHUD.app and copies it to /Applications
+./build-app.sh --install        # builds Clubhouse.app and copies it to /Applications
 ```
 
 The bundle records this checkout's path in `AHDaemonRoot`, so an installed copy
@@ -125,7 +128,7 @@ which ones wait on you and what they wait for.
   what a click on the row does. The notification goes away when the wait ends.
   The sessions that are already waiting at launch do not send one, and a
   finished session never does. The first launch asks for permission. The
-  notifications work only in `AgentHUD.app`, because `swift run` has no bundle
+  notifications work only in `Clubhouse.app`, because `swift run` has no bundle
   id.
 
 ## The menu bar

@@ -73,7 +73,7 @@ struct CardHeaderView: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Text("AGENT HUD")
+            Text("CLUBHOUSE")
                 .font(Theme.label(11, weight: .semibold))
                 .tracking(2.0)
                 .foregroundStyle(Theme.text)

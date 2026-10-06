@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-hud"
 version = "0.1.0"
-description = "The snapshot daemon behind the Agent HUD menu-bar readout"
+description = "The snapshot daemon behind the Clubhouse menu-bar readout"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Joseph Tutera" }]

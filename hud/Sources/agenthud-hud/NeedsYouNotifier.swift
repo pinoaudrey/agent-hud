@@ -7,7 +7,7 @@ import UserNotifications
 /// click on its NEEDS YOU row does.
 ///
 /// `UNUserNotificationCenter` needs a bundle identifier, which `swift run`
-/// does not have; the notifier stays off there and works in AgentHUD.app.
+/// does not have; the notifier stays off there and works in Clubhouse.app.
 @MainActor
 final class NeedsYouNotifier: NSObject, UNUserNotificationCenterDelegate {
     private var alerts = NeedsYouAlerts()
@@ -39,7 +39,7 @@ final class NeedsYouNotifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    /// AgentHUD has no windows to be in front of, so macOS would treat it as
+    /// Clubhouse has no windows to be in front of, so macOS would treat it as
     /// active and swallow the banner without this.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,

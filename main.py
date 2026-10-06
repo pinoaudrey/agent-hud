@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""agenthud: the snapshot daemon behind the Agent HUD menu-bar app.
+"""agenthud: the snapshot daemon behind the Clubhouse menu-bar app.
 
 One subcommand, `serve`, which polls subscription usage and live agent activity,
 folds them into a single snapshot, and serves it on loopback for the Swift app.
