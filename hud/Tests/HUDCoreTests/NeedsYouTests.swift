@@ -188,3 +188,23 @@ final class NeedsYouClickableTests: XCTestCase {
         XCTAssertFalse(section(onSelect: nil).isClickable(agent(tty: "ttys012")))
     }
 }
+
+/// Finished starts folded behind its heading, and opens to the full rows.
+final class NeedsYouFinishedFoldTests: XCTestCase {
+
+    @MainActor
+    private func height(_ view: some View) -> CGFloat {
+        let renderer = ImageRenderer(content: view.frame(width: 500))
+        return renderer.cgImage.map { CGFloat($0.height) / renderer.scale } ?? 0
+    }
+
+    @MainActor
+    func testFinishedStartsFoldedAndOpensTaller() {
+        let needsYou = HUDSnapshot.sample.needsYou(now: HUDSnapshot.previewNow)
+        XCTAssertFalse(needsYou.finished.isEmpty)
+        let folded = height(NeedsYouSection(needsYou: needsYou, now: HUDSnapshot.previewNow))
+        let open = height(NeedsYouSection(needsYou: needsYou, now: HUDSnapshot.previewNow, showsFinished: true))
+        XCTAssertGreaterThan(folded, 0)
+        XCTAssertLessThan(folded + 30, open)
+    }
+}
